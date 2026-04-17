@@ -1,0 +1,1960 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Claude Code Statusline Playground</title>
+<style>
+  :root {
+    --bg: #0e1116;
+    --panel: #161b22;
+    --panel-2: #1c222b;
+    --panel-3: #222a35;
+    --border: #30363d;
+    --text: #e6edf3;
+    --muted: #8b949e;
+    --accent: #58a6ff;
+    --danger: #f85149;
+    --ok: #3fb950;
+    --warn: #d29922;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; height: 100%; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    font-size: 13px;
+    line-height: 1.5;
+    overflow: hidden;
+  }
+  header.topbar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 14px;
+    background: var(--panel);
+    border-bottom: 1px solid var(--border);
+  }
+  header.topbar h1 {
+    font-size: 14px;
+    margin: 0;
+    margin-right: auto;
+    letter-spacing: 0.02em;
+  }
+  header.topbar .topbar-actions { display: flex; gap: 5px; flex-wrap: wrap; }
+  .wrap {
+    display: grid;
+    grid-template-columns: 480px 1fr;
+    height: calc(100vh - 41px);
+  }
+  aside.controls {
+    background: var(--panel);
+    border-right: 1px solid var(--border);
+    overflow-y: auto;
+    padding: 14px 14px 60px 14px;
+  }
+  main.preview-side {
+    display: grid;
+    grid-template-rows: 1fr auto;
+    overflow: hidden;
+  }
+  h2 {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--muted);
+    margin: 16px 0 6px 0;
+    font-weight: 600;
+  }
+  h2:first-child { margin-top: 0; }
+  .preset-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+  }
+  .preset-btn, .btn, .mini-btn {
+    background: var(--panel-2);
+    color: var(--text);
+    border: 1px solid var(--border);
+    padding: 5px 9px;
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 11px;
+    font-family: inherit;
+    transition: background 0.08s ease;
+  }
+  .mini-btn { padding: 3px 7px; font-size: 10px; }
+  .preset-btn:hover, .btn:hover, .mini-btn:hover { background: var(--panel-3); border-color: #444c56; }
+  .preset-btn:disabled, .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  .preset-btn.active { border-color: var(--accent); background: #1e2a3a; }
+  select, input[type=text], input[type=number] {
+    background: var(--panel-2);
+    color: var(--text);
+    border: 1px solid var(--border);
+    padding: 4px 7px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-family: inherit;
+    width: 100%;
+  }
+  input[type=color] {
+    border: 1px solid var(--border);
+    background: transparent;
+    width: 28px; height: 24px;
+    padding: 0;
+    cursor: pointer;
+    border-radius: 3px;
+  }
+  select:focus, input:focus { outline: none; border-color: var(--accent); }
+  .row { display: flex; gap: 6px; align-items: center; }
+  .row + .row { margin-top: 5px; }
+  .field-label { color: var(--muted); font-size: 10px; min-width: 80px; }
+  .hint { color: var(--muted); font-size: 10px; margin: 3px 0 6px 0; }
+
+  /* Segment list */
+  .segment-list { display: flex; flex-direction: column; gap: 3px; }
+  .segment {
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    padding: 6px 9px;
+    display: grid;
+    grid-template-columns: 18px 1fr auto auto auto auto;
+    gap: 5px;
+    align-items: center;
+  }
+  .segment.disabled { opacity: 0.45; }
+  .segment-label {
+    font-size: 11px;
+    font-weight: 500;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+  }
+  .segment-preview {
+    font-family: "Cascadia Mono", Consolas, "Courier New", monospace;
+    font-size: 10px;
+    color: var(--muted);
+    max-width: 170px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .segment input[type=checkbox] { cursor: pointer; }
+  .mini-toggle {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    padding: 2px 5px;
+    border-radius: 3px;
+    font-size: 9px;
+    cursor: pointer;
+    color: var(--muted);
+    user-select: none;
+    min-width: 14px;
+    text-align: center;
+  }
+  .mini-toggle.active { color: var(--text); border-color: var(--accent); background: #1e2a3a; }
+  .segment select { width: 80px; padding: 2px 4px; font-size: 10px; }
+  .arrow-btn {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    width: 20px; height: 20px;
+    padding: 0;
+    border-radius: 3px;
+    cursor: pointer;
+    font-size: 9px;
+  }
+  .arrow-btn:hover { color: var(--text); border-color: #444c56; }
+
+  .expand-toggle {
+    grid-column: 2 / -1;
+    font-size: 10px;
+    color: var(--muted);
+    cursor: pointer;
+    background: transparent;
+    border: none;
+    text-align: left;
+    padding: 2px 0 0 0;
+  }
+  .expand-toggle:hover { color: var(--text); }
+  .segment-expanded {
+    grid-column: 1 / -1;
+    padding-top: 6px;
+    margin-top: 4px;
+    border-top: 1px dashed var(--border);
+    display: grid;
+    grid-template-columns: auto 1fr auto 1fr;
+    gap: 5px 8px;
+    font-size: 10px;
+    align-items: center;
+  }
+  .segment-expanded label { color: var(--muted); font-size: 10px; }
+  .segment-expanded input[type=text] { font-size: 10px; padding: 3px 5px; }
+
+  details { border-top: 1px solid var(--border); padding-top: 10px; margin-top: 14px; }
+  summary { cursor: pointer; color: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; list-style: none; }
+  summary:hover { color: var(--text); }
+  summary::before { content: '▸ '; }
+  details[open] > summary::before { content: '▾ '; }
+
+  /* Preview */
+  .preview-wrap {
+    padding: 18px;
+    overflow: auto;
+    background: #0a0d12;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .preview-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .preview-header h3 { font-size: 12px; margin: 0; }
+  .preview-header .state-pills { display: flex; gap: 4px; flex-wrap: wrap; }
+  .state-pill {
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    padding: 3px 9px;
+    border-radius: 12px;
+    font-size: 10px;
+    cursor: pointer;
+    color: var(--muted);
+    user-select: none;
+  }
+  .state-pill.active { color: var(--text); border-color: var(--accent); background: #1e2a3a; }
+
+  .terminal {
+    background: var(--term-bg, #000);
+    border-radius: 8px;
+    border: 1px solid #202530;
+    padding: 12px 14px;
+    font-family: var(--term-font, "Cascadia Mono"), Consolas, "Courier New", monospace;
+    font-size: calc(13px * var(--term-zoom, 1));
+    color: var(--term-fg, #e5e5e5);
+    overflow-x: auto;
+    white-space: pre;
+    min-height: 100px;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.4);
+    transition: background 0.15s ease, color 0.15s ease;
+  }
+  .terminal .chrome {
+    display: flex; gap: 6px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+    margin-bottom: 8px;
+  }
+  .chrome-dot { width: 10px; height: 10px; border-radius: 50%; }
+  .statusline-line { display: block; }
+  .statusline-caption {
+    display: block;
+    opacity: 0.55;
+    font-size: 0.88em;
+    margin-top: 2px;
+    color: var(--term-dim, #6b7280);
+  }
+  .statusline-caption .cap-cell {
+    display: inline-block;
+    text-align: left;
+    white-space: pre;
+    overflow: hidden;
+  }
+  .faux-prompt { color: var(--term-dim, #6b7280); margin-bottom: 5px; }
+
+  .budget-line {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 10px;
+    color: var(--muted);
+    font-family: "Cascadia Mono", Consolas, monospace;
+  }
+  .budget-bar {
+    width: 160px;
+    height: 4px;
+    background: #1c222b;
+    border-radius: 2px;
+    overflow: hidden;
+  }
+  .budget-bar > div {
+    height: 100%;
+    background: var(--ok);
+    transition: width 0.15s ease;
+  }
+  .budget-bar > div.warn { background: var(--warn); }
+  .budget-bar > div.danger { background: var(--danger); }
+
+  /* Prompt output */
+  .prompt-wrap {
+    background: var(--panel);
+    border-top: 1px solid var(--border);
+    padding: 12px 18px 14px 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    max-height: 50%;
+  }
+  .prompt-head { display: flex; align-items: center; justify-content: space-between; gap: 6px; flex-wrap: wrap; }
+  .prompt-head h3 { margin: 0; font-size: 12px; }
+  #prompt-out, #json-out {
+    background: #0a0d12;
+    border: 1px solid var(--border);
+    padding: 10px 12px;
+    border-radius: 5px;
+    font-family: "Cascadia Mono", Consolas, "Courier New", monospace;
+    font-size: 11px;
+    color: #c9d1d9;
+    white-space: pre-wrap;
+    margin: 0;
+    overflow-y: auto;
+    max-height: 220px;
+  }
+  .view-toggle { display: flex; gap: 2px; }
+  .view-toggle .mini-btn.active { border-color: var(--accent); background: #1e2a3a; color: var(--text); }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 9px; height: 9px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #2a313b; border-radius: 5px; }
+  ::-webkit-scrollbar-thumb:hover { background: #3a414b; }
+
+  .kbd {
+    font-family: "Cascadia Mono", Consolas, monospace;
+    background: var(--panel-2);
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-size: 10px;
+    border: 1px solid var(--border);
+  }
+
+  .custom-seg-card {
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 6px 8px;
+    margin-top: 5px;
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 6px;
+    align-items: center;
+  }
+
+  .toast {
+    position: fixed;
+    bottom: 18px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: #1e2a3a;
+    color: var(--text);
+    padding: 7px 14px;
+    border-radius: 5px;
+    font-size: 12px;
+    border: 1px solid var(--accent);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.15s ease;
+    z-index: 99;
+  }
+  .toast.show { opacity: 1; }
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <h1>Statusline Playground</h1>
+  <div class="topbar-actions">
+    <button class="mini-btn" id="undo-btn" title="Undo (Ctrl+Z)">Undo</button>
+    <button class="mini-btn" id="redo-btn" title="Redo (Ctrl+Y)">Redo</button>
+    <button class="mini-btn" id="randomize-btn" title="Randomize">🎲 Randomize</button>
+    <button class="mini-btn" id="save-preset-btn" title="Save current as custom preset">💾 Save</button>
+    <button class="mini-btn" id="share-btn" title="Copy URL with state">🔗 Share</button>
+    <button class="mini-btn" id="reset-btn" title="Reset to defaults">↺ Reset</button>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <!-- ========== CONTROLS ========== -->
+  <aside class="controls">
+
+    <h2>Presets</h2>
+    <div class="preset-row" id="preset-row"></div>
+
+    <h2>Separator</h2>
+    <div class="row">
+      <select id="separator-select">
+        <option value=" │ ">│  (default)</option>
+        <option value=" · "> ·  middle dot</option>
+        <option value=" | "> |  pipe</option>
+        <option value="  ">(double space)</option>
+        <option value=" → "> →  arrow</option>
+        <option value=" / "> /  slash</option>
+        <option value=" • "> •  bullet</option>
+        <option value=" ─ "> ─  em dash</option>
+        <option value=" ~ "> ~  tilde</option>
+        <option value=" , "> ,  comma</option>
+        <option value=" ✦ "> ✦  star</option>
+        <option value="custom">custom…</option>
+      </select>
+    </div>
+    <div class="row" id="custom-sep-row" style="display:none; margin-top:5px;">
+      <input type="text" id="custom-separator" maxlength="12" placeholder="e.g. ' ~ '">
+    </div>
+    <div class="row" style="margin-top:5px;">
+      <span class="field-label">Sep color</span>
+      <select id="sep-color"></select>
+      <span class="mini-toggle" id="sep-bold">B</span>
+      <span class="mini-toggle" id="sep-dim">D</span>
+    </div>
+
+    <h2>Segments</h2>
+    <div class="hint">Toggle to include. Use ↑↓ to reorder. Click <span class="kbd">more…</span> for advanced styling.</div>
+    <div class="segment-list" id="segment-list"></div>
+
+    <h2>Custom text segments <button class="mini-btn" id="add-custom-btn" style="float:right;margin-top:-2px;">+ Add</button></h2>
+    <div class="hint">Pin your own text to the bar. Shows up as a reorderable segment.</div>
+    <div id="custom-seg-list"></div>
+
+    <details id="theme-details">
+      <summary>Preview: terminal theme / font / zoom</summary>
+      <div class="row" style="margin-top:10px;">
+        <span class="field-label">Theme</span>
+        <select id="theme-select">
+          <option value="windows">Windows Terminal</option>
+          <option value="solarized-dark">Solarized Dark</option>
+          <option value="dracula">Dracula</option>
+          <option value="one-dark">One Dark</option>
+          <option value="monokai">Monokai</option>
+          <option value="gruvbox-dark">Gruvbox Dark</option>
+          <option value="nord">Nord</option>
+          <option value="light">Light mode</option>
+          <option value="jccidc">JCCIDC brand</option>
+        </select>
+      </div>
+      <div class="row">
+        <span class="field-label">Font</span>
+        <select id="font-select">
+          <option value='"Cascadia Mono"'>Cascadia Mono</option>
+          <option value='"Fira Code"'>Fira Code</option>
+          <option value='"JetBrains Mono"'>JetBrains Mono</option>
+          <option value='"SF Mono"'>SF Mono</option>
+          <option value='"Source Code Pro"'>Source Code Pro</option>
+          <option value='"Consolas"'>Consolas</option>
+          <option value='monospace'>system monospace</option>
+        </select>
+      </div>
+      <div class="row">
+        <span class="field-label">Zoom</span>
+        <select id="zoom-select">
+          <option value="1">1.0×</option>
+          <option value="1.25">1.25×</option>
+          <option value="1.5">1.5×</option>
+          <option value="2">2.0×</option>
+        </select>
+      </div>
+      <div class="row">
+        <span class="field-label">Long path</span>
+        <input type="checkbox" id="longpath-check">
+      </div>
+    </details>
+
+    <details>
+      <summary>Terminal state (for preview)</summary>
+      <div class="row" style="margin-top:10px;">
+        <span class="field-label">Context %</span>
+        <input type="range" id="ctx-range" min="0" max="100" value="12" style="flex:1;">
+        <span id="ctx-label" style="width:34px;text-align:right;font-family:monospace;">12%</span>
+      </div>
+      <div class="row">
+        <span class="field-label">Show task</span>
+        <input type="checkbox" id="show-task" checked>
+      </div>
+      <div class="row">
+        <span class="field-label">Exit OK</span>
+        <input type="checkbox" id="exit-ok" checked>
+      </div>
+      <div class="row">
+        <span class="field-label">Caption line</span>
+        <input type="checkbox" id="show-captions" checked>
+        <span style="font-size:10px;color:var(--muted);">render captions under segments</span>
+      </div>
+    </details>
+
+    <details>
+      <summary>My saved presets</summary>
+      <div id="saved-preset-list" style="margin-top:8px;"></div>
+      <div class="hint">Saved to this browser's localStorage. Use 💾 Save above to add one.</div>
+    </details>
+
+    <details>
+      <summary>Keyboard shortcuts</summary>
+      <div style="font-size:10px;line-height:1.9;margin-top:6px;color:var(--muted);">
+        <div><span class="kbd">Ctrl+Z</span> / <span class="kbd">Ctrl+Y</span> — undo / redo</div>
+        <div><span class="kbd">R</span> — randomize</div>
+        <div><span class="kbd">C</span> — copy prompt</div>
+        <div><span class="kbd">S</span> — save preset</div>
+        <div><span class="kbd">1</span>–<span class="kbd">9</span> — apply preset</div>
+      </div>
+    </details>
+
+  </aside>
+
+  <!-- ========== PREVIEW + PROMPT ========== -->
+  <main class="preview-side">
+    <div class="preview-wrap">
+      <div class="preview-header">
+        <h3>Live preview</h3>
+        <div class="state-pills">
+          <span class="state-pill active" data-scenario="default">Default</span>
+          <span class="state-pill" data-scenario="low-ctx">80% ctx</span>
+          <span class="state-pill" data-scenario="no-task">No task</span>
+          <span class="state-pill" data-scenario="all-off">Badges off</span>
+        </div>
+      </div>
+
+      <div class="terminal" id="terminal-mock">
+        <div class="chrome">
+          <div class="chrome-dot" style="background:#ff5f56"></div>
+          <div class="chrome-dot" style="background:#ffbd2e"></div>
+          <div class="chrome-dot" style="background:#27c93f"></div>
+        </div>
+        <div class="faux-prompt">$ claude</div>
+        <div class="faux-prompt">Working on your task…</div>
+        <div class="faux-prompt">✓ Edit complete.</div>
+        <div class="statusline-line" id="statusline-preview"></div>
+        <div class="statusline-caption" id="statusline-caption"></div>
+      </div>
+
+      <div class="budget-line">
+        <span><span id="char-count">0</span> visible chars · <span id="seg-count">0</span> segments</span>
+        <div class="budget-bar"><div id="budget-fill" style="width:0%"></div></div>
+      </div>
+
+      <div style="color:var(--muted);font-size:10px;">
+        Palette reflects the selected terminal theme. Your real terminal may render differently.
+      </div>
+    </div>
+
+    <div class="prompt-wrap">
+      <div class="prompt-head">
+        <h3>Output</h3>
+        <div style="display:flex;gap:6px;align-items:center;">
+          <div class="view-toggle" id="view-toggle">
+            <button class="mini-btn active" data-view="prompt">Prompt</button>
+            <button class="mini-btn" data-view="json">JSON</button>
+          </div>
+          <button class="btn" id="copy-btn">Copy</button>
+        </div>
+      </div>
+      <pre id="prompt-out"></pre>
+      <pre id="json-out" style="display:none;"></pre>
+    </div>
+  </main>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+/* ============================================================
+ * Palette: named ANSI colors
+ * ============================================================ */
+const ANSI_COLORS = {
+  black:         { code: 30, bg: 40, hex: '#000000', label: 'black' },
+  red:           { code: 31, bg: 41, hex: '#cd3131', label: 'red' },
+  green:         { code: 32, bg: 42, hex: '#0dbc79', label: 'green' },
+  yellow:        { code: 33, bg: 43, hex: '#e5e510', label: 'yellow' },
+  blue:          { code: 34, bg: 44, hex: '#2472c8', label: 'blue' },
+  magenta:       { code: 35, bg: 45, hex: '#bc3fbc', label: 'magenta' },
+  cyan:          { code: 36, bg: 46, hex: '#11a8cd', label: 'cyan' },
+  white:         { code: 37, bg: 47, hex: '#e5e5e5', label: 'white' },
+  gray:          { code: 90, bg:100, hex: '#8b949e', label: 'gray' },
+  brightRed:     { code: 91, bg:101, hex: '#f14c4c', label: 'bright red' },
+  brightGreen:   { code: 92, bg:102, hex: '#23d18b', label: 'bright green' },
+  brightYellow:  { code: 93, bg:103, hex: '#f5f543', label: 'bright yellow' },
+  brightBlue:    { code: 94, bg:104, hex: '#3b8eea', label: 'bright blue' },
+  brightMagenta: { code: 95, bg:105, hex: '#d670d6', label: 'bright magenta' },
+  brightCyan:    { code: 96, bg:106, hex: '#29b8db', label: 'bright cyan' },
+  brightWhite:   { code: 97, bg:107, hex: '#ffffff', label: 'bright white' },
+  orange:        { code: '38;5;208', bg: '48;5;208', hex: '#e67e22', label: 'orange (256)' },
+  pink:          { code: '38;5;205', bg: '48;5;205', hex: '#ff69b4', label: 'pink (256)' },
+  inherit:       { code: null, bg: null, hex: 'transparent', label: '(default)' },
+};
+
+/* ============================================================
+ * Terminal themes
+ * ============================================================ */
+const THEMES = {
+  windows:        { bg: '#0c0c0c', fg: '#e5e5e5', dim: '#6b7280', name: 'Windows Terminal' },
+  'solarized-dark': { bg: '#002b36', fg: '#839496', dim: '#586e75', name: 'Solarized Dark' },
+  dracula:        { bg: '#282a36', fg: '#f8f8f2', dim: '#6272a4', name: 'Dracula' },
+  'one-dark':     { bg: '#282c34', fg: '#abb2bf', dim: '#5c6370', name: 'One Dark' },
+  monokai:        { bg: '#272822', fg: '#f8f8f2', dim: '#75715e', name: 'Monokai' },
+  'gruvbox-dark': { bg: '#282828', fg: '#ebdbb2', dim: '#928374', name: 'Gruvbox Dark' },
+  nord:           { bg: '#2e3440', fg: '#d8dee9', dim: '#616e88', name: 'Nord' },
+  light:          { bg: '#ffffff', fg: '#24292f', dim: '#6e7781', name: 'Light' },
+  jccidc:         { bg: '#0a1628', fg: '#d4e2f7', dim: '#4f6a8f', name: 'JCCIDC' },
+};
+
+/* ============================================================
+ * Icons (emoji set)
+ * ============================================================ */
+const ICON_SET = ['', '🌿', '🔋', '⏱', '📟', '⚡', '🔥', '📂', '🧠', '🎯', '🚀', '🛠', '🧩', '📌', '✨', '🪵', '🐍', '🟢', '🔵', '🟡', '🔴', '⚠', '✓', '✗', '●', '○', '◆', '▲', '▼', '★'];
+
+/* ============================================================
+ * Bracket styles
+ * ============================================================ */
+const BRACKETS = {
+  none:       { open: '', close: '' },
+  square:     { open: '[', close: ']' },
+  angle:      { open: '<', close: '>' },
+  round:      { open: '(', close: ')' },
+  curly:      { open: '{', close: '}' },
+  guillemets: { open: '«', close: '»' },
+  pipes:      { open: '|', close: '|' },
+  ticks:      { open: '`', close: '`' },
+};
+
+/* ============================================================
+ * Segment catalog
+ * ============================================================ */
+const ALL_SEGMENTS = [
+  { id: 'caveman',        label: 'Caveman badge',    text: '[CAVEMAN]',              color: 'brightYellow', bold: true  },
+  { id: 'enforcer',       label: 'Enforcer badge',   text: '[ENFORCER:structural]',  color: 'brightBlue',   bold: true  },
+  { id: 'gsdupdate',      label: 'GSD update',       text: '⬆ /gsd-update',          color: 'yellow' },
+  { id: 'gsdphase',       label: 'GSD phase',        text: 'phase 72.1',             color: 'brightCyan' },
+  { id: 'branch',         label: 'Git branch',       text: 'main',                   color: 'magenta', icon: '🌿' },
+  { id: 'aheadbehind',    label: 'Ahead / behind',   text: '↑2 ↓1',                  color: 'cyan' },
+  { id: 'dirty',          label: 'Dirty indicator',  text: '●',                      color: 'red', bold: true },
+  { id: 'untracked',      label: 'Untracked count',  text: '?3',                     color: 'yellow' },
+  { id: 'prs',            label: 'Open PRs',         text: 'PR:2',                   color: 'green' },
+  { id: 'commitage',      label: 'Last commit age',  text: '2m ago',                 color: 'gray', italic: true },
+  { id: 'repo',           label: 'Repo name',        text: 'caveman-harness',        color: 'white' },
+  { id: 'exitstatus',     label: 'Exit status',      text: '✓',                      color: 'green', bold: true },
+  { id: 'model',          label: 'Model',            text: 'Opus 4.7',               color: 'white', dim: true },
+  { id: 'task',           label: 'Current task',     text: 'Editing statusline',     color: 'white', bold: true },
+  { id: 'dir',            label: 'Directory',        text: 'caveman-harness',        color: 'white', dim: true },
+  { id: 'clock',          label: 'Time',             text: '14:32',                  color: 'gray' },
+  { id: 'date',           label: 'Date',             text: 'Fri Apr 17',             color: 'gray' },
+  { id: 'session',        label: 'Session duration', text: '1h 23m',                 color: 'gray' },
+  { id: 'pomodoro',       label: 'Pomodoro',         text: '25:00',                  color: 'brightRed', icon: '⏱' },
+  { id: 'node',           label: 'Node version',     text: 'node 20.11',             color: 'green', dim: true },
+  { id: 'python',         label: 'Python version',   text: 'py 3.12',                color: 'brightBlue', dim: true },
+  { id: 'battery',        label: 'Battery',          text: '82%',                    color: 'brightGreen', icon: '🔋' },
+  { id: 'todos',          label: 'TODO count',       text: '3 todo',                 color: 'yellow' },
+  { id: 'enforcerprog',   label: 'Enforcer progress',text: '3/7 tasks',              color: 'brightBlue' },
+  { id: 'cost',           label: 'Cost estimate',    text: '$0.42',                  color: 'brightGreen' },
+  { id: 'aws',            label: 'AWS profile',      text: 'aws:prod',               color: 'orange' },
+  { id: 'kubectl',        label: 'kubectl context',  text: 'k8s:staging',            color: 'brightMagenta' },
+  { id: 'gcloud',         label: 'gcloud account',   text: 'gcp:main',               color: 'brightBlue' },
+  { id: 'context',        label: 'Context bar',      text: '█░░░░░░░░░ 12%',         color: 'green' },
+  { id: 'tokens',         label: 'Tokens saved',     text: '~45k saved',             color: 'brightCyan' },
+  { id: 'sessTokens',     label: 'Session tokens',   text: '45.3k',                  color: 'brightCyan' },
+  { id: 'sessCost',       label: 'Session cost',     text: '$2.14',                  color: 'brightGreen' },
+  { id: 'cacheHit',       label: 'Cache hit %',      text: '78% cached',             color: 'orange' },
+  { id: 'todayCost',      label: "Today's cost",     text: '$14.82 today',           color: 'brightGreen' },
+  { id: 'msgs5h',         label: 'Messages / 5h',    text: '23 msgs/5h',             color: 'brightYellow' },
+];
+
+// Seed every segment with full style fields
+function hydrateSegment(s) {
+  return Object.assign({
+    bold: false, dim: false, italic: false, underline: false, strikethrough: false,
+    bgColor: 'inherit',
+    useHex: false, hex: '#e5e5e5',
+    useHexBg: false, hexBg: '#000000',
+    icon: '',
+    bracket: 'none',
+    maxWidth: 0,
+    caseTransform: 'none',   // 'none' | 'upper' | 'lower' | 'title'
+    sepBefore: '',           // '' = use global default; else this literal separator
+    caption: '',             // '' = no caption rendered underneath; else this string below segment
+  }, s);
+}
+function applyCase(text, mode) {
+  if (!text || mode === 'none' || !mode) return text;
+  if (mode === 'upper') return text.toUpperCase();
+  if (mode === 'lower') return text.toLowerCase();
+  if (mode === 'title') return text.replace(/\b(\w)(\w*)/g, (_, a, b) => a.toUpperCase() + b.toLowerCase());
+  return text;
+}
+const BASE_SEGMENTS = ALL_SEGMENTS.map(hydrateSegment);
+
+/* ============================================================
+ * Presets
+ * ============================================================ */
+const PRESETS = {
+  'my-defaults': {
+    label: 'My defaults ★',
+    enabled: ['model','enforcer','caveman','dir','repo','branch','commitage','todos','task','context'],
+    separator: ' | ',
+    overrides: {
+      model:     { color: 'orange', dim: true, bracket: 'square', caseTransform: 'upper', caption: 'model' },
+      enforcer:  { caption: 'enforcer' },
+      caveman:   { caption: 'caveman' },
+      dir:       { color: 'brightWhite', dim: true, icon: '📂', caption: 'dir' },
+      repo:      { color: 'red', icon: '📟', sepBefore: ' │ ', caption: 'repo' },
+      branch:    { color: 'red', icon: '🌿', sepBefore: ' → ', caption: 'branch' },
+      commitage: { color: 'red', italic: true, icon: '✓', sepBefore: ' → ', caption: 'commit' },
+      todos:     { color: 'brightMagenta', bracket: 'square', caseTransform: 'upper', caption: 'todos' },
+      task:      { color: 'brightMagenta', sepBefore: ' → ', caption: 'task' },
+      context:   { caption: 'ctx' },
+    },
+  },
+  'original': {
+    label: 'Original',
+    enabled: ['caveman','enforcer','gsdupdate','model','task','dir','context'],
+    separator: ' │ ',
+    overrides: {},
+  },
+  'minimal': {
+    label: 'Minimal',
+    enabled: ['model','dir','context'],
+    separator: '  ',
+    overrides: { model: { dim: true }, dir: { dim: true } },
+  },
+  'developer': {
+    label: 'Developer',
+    enabled: ['caveman','enforcer','branch','aheadbehind','dirty','model','dir','context'],
+    separator: ' · ',
+    overrides: { branch: { icon: '🌿' } },
+  },
+  'kitchen-sink': {
+    label: 'Kitchen sink',
+    enabled: ['caveman','enforcer','branch','aheadbehind','dirty','untracked','prs','todos','enforcerprog','clock','session','model','task','dir','node','battery','context','tokens','cost'],
+    separator: ' · ',
+    overrides: {},
+  },
+  'clock-first': {
+    label: 'Clock-first',
+    enabled: ['clock','caveman','model','task','dir','context'],
+    separator: ' │ ',
+    overrides: { clock: { color: 'brightCyan', bold: true } },
+  },
+  'monochrome': {
+    label: 'Monochrome',
+    enabled: ['caveman','enforcer','model','task','dir','context'],
+    separator: ' │ ',
+    overrides: {
+      caveman:  { color: 'white', bold: true },
+      enforcer: { color: 'white', bold: true, italic: true },
+      model:    { color: 'white', dim: true },
+      task:     { color: 'white', bold: true },
+      dir:      { color: 'white', dim: true, italic: true },
+      context:  { color: 'white', dim: false },
+    },
+  },
+  'cyberpunk': {
+    label: 'Cyberpunk',
+    enabled: ['caveman','branch','dirty','model','task','dir','context'],
+    separator: ' ✦ ',
+    overrides: {
+      caveman: { color: 'pink', bold: true, bracket: 'guillemets' },
+      branch:  { color: 'brightMagenta', icon: '🌿' },
+      dirty:   { color: 'pink', bold: true },
+      model:   { color: 'brightMagenta', italic: true },
+      task:    { color: 'brightCyan', bold: true },
+      dir:     { color: 'brightBlue', dim: true },
+      context: { color: 'brightMagenta' },
+    },
+  },
+  'brand-jccidc': {
+    label: 'JCCIDC brand',
+    enabled: ['caveman','enforcer','model','task','dir','context'],
+    separator: ' ─ ',
+    overrides: {
+      caveman:  { useHex: true, hex: '#58a6ff', bold: true },
+      enforcer: { useHex: true, hex: '#1f6feb', bold: true },
+      model:    { useHex: true, hex: '#d4e2f7', dim: true },
+      task:     { useHex: true, hex: '#58a6ff', bold: true },
+      dir:      { useHex: true, hex: '#4f6a8f', italic: true },
+      context:  { useHex: true, hex: '#58a6ff' },
+    },
+  },
+  'dashboard': {
+    label: 'Dashboard',
+    enabled: ['caveman','enforcer','branch','aheadbehind','dirty','commitage','model','task','clock','session','context','tokens'],
+    separator: ' │ ',
+    overrides: {
+      branch: { icon: '🌿', bracket: 'square' },
+      commitage: { italic: true, color: 'gray' },
+      clock: { icon: '⏱' },
+    },
+  },
+};
+
+/* ============================================================
+ * Default global state
+ * ============================================================ */
+function defaultState() {
+  const segments = BASE_SEGMENTS.map(s => structuredClone(s));
+  return {
+    activePreset: 'my-defaults',
+    separator: ' | ',
+    customSeparator: '',
+    sepColor: 'gray',
+    sepBold: false,
+    sepDim: false,
+    scenario: 'default',
+    contextPct: 12,
+    showTask: true,
+    exitOk: true,
+    showCaptions: true,   // emits a dim gray caption line under the statusline
+    segments: segments,
+    order: PRESETS['my-defaults'].enabled.concat(
+      BASE_SEGMENTS.map(s => s.id).filter(id => !PRESETS['my-defaults'].enabled.includes(id))
+    ),
+    enabled: PRESETS['my-defaults'].enabled.slice(),
+    customSegments: [],     // [{id, text, color, bold, dim, italic, icon, bracket}]
+    expandedSegments: new Set(),  // which rows are expanded
+    theme: 'windows',
+    font: '"Cascadia Mono"',
+    zoom: 1,
+    longPath: false,
+  };
+}
+let state = defaultState();
+const historyStack = [];
+const futureStack = [];
+
+function pushHistory() {
+  historyStack.push(JSON.stringify(stateSerialize()));
+  if (historyStack.length > 80) historyStack.shift();
+  futureStack.length = 0;
+}
+function stateSerialize() {
+  return {
+    activePreset: state.activePreset,
+    separator: state.separator,
+    customSeparator: state.customSeparator,
+    sepColor: state.sepColor,
+    sepBold: state.sepBold,
+    sepDim: state.sepDim,
+    segments: state.segments,
+    order: state.order,
+    enabled: state.enabled,
+    customSegments: state.customSegments,
+    theme: state.theme,
+    font: state.font,
+    zoom: state.zoom,
+  };
+}
+function stateDeserialize(data) {
+  if (!data) return;
+  const keys = Object.keys(stateSerialize());
+  for (const k of keys) if (k in data) state[k] = data[k];
+  // Always rebuild Sets / derived
+  state.expandedSegments = new Set();
+  ensureAllSegmentsPresent();
+}
+
+// Make sure any segment added later still exists in state (survives across versions)
+function ensureAllSegmentsPresent() {
+  const have = new Set(state.segments.map(s => s.id));
+  for (const base of BASE_SEGMENTS) {
+    if (!have.has(base.id)) state.segments.push(structuredClone(base));
+    if (!state.order.includes(base.id)) state.order.push(base.id);
+  }
+}
+
+/* ============================================================
+ * DOM refs
+ * ============================================================ */
+const el = {
+  presets:        document.getElementById('preset-row'),
+  segmentList:    document.getElementById('segment-list'),
+  customSegList:  document.getElementById('custom-seg-list'),
+  separatorSelect:document.getElementById('separator-select'),
+  customSepRow:   document.getElementById('custom-sep-row'),
+  customSep:      document.getElementById('custom-separator'),
+  sepColor:       document.getElementById('sep-color'),
+  sepBold:        document.getElementById('sep-bold'),
+  sepDim:         document.getElementById('sep-dim'),
+  preview:        document.getElementById('statusline-preview'),
+  caption:        document.getElementById('statusline-caption'),
+  promptOut:      document.getElementById('prompt-out'),
+  jsonOut:        document.getElementById('json-out'),
+  copyBtn:        document.getElementById('copy-btn'),
+  statePills:     document.querySelectorAll('.state-pill'),
+  ctxRange:       document.getElementById('ctx-range'),
+  ctxLabel:       document.getElementById('ctx-label'),
+  showTask:       document.getElementById('show-task'),
+  exitOk:         document.getElementById('exit-ok'),
+  showCaptions:   document.getElementById('show-captions'),
+  themeSelect:    document.getElementById('theme-select'),
+  fontSelect:     document.getElementById('font-select'),
+  zoomSelect:     document.getElementById('zoom-select'),
+  longpathCheck:  document.getElementById('longpath-check'),
+  terminalMock:   document.getElementById('terminal-mock'),
+  charCount:      document.getElementById('char-count'),
+  segCount:       document.getElementById('seg-count'),
+  budgetFill:     document.getElementById('budget-fill'),
+  undoBtn:        document.getElementById('undo-btn'),
+  redoBtn:        document.getElementById('redo-btn'),
+  randomizeBtn:   document.getElementById('randomize-btn'),
+  savePresetBtn:  document.getElementById('save-preset-btn'),
+  shareBtn:       document.getElementById('share-btn'),
+  resetBtn:       document.getElementById('reset-btn'),
+  addCustomBtn:   document.getElementById('add-custom-btn'),
+  savedPresetList:document.getElementById('saved-preset-list'),
+  viewToggle:     document.getElementById('view-toggle'),
+  toast:          document.getElementById('toast'),
+};
+
+/* ============================================================
+ * Lookups
+ * ============================================================ */
+function getSegment(id) {
+  const s = state.segments.find(s => s.id === id);
+  if (s) return s;
+  const c = state.customSegments.find(s => s.id === id);
+  return c;
+}
+function isCustomSeg(id) { return id.startsWith('custom_'); }
+
+/* ============================================================
+ * Preset apply
+ * ============================================================ */
+function applyPreset(name, fromHistory) {
+  const p = PRESETS[name] || loadSavedPresets()[name];
+  if (!p) return;
+  if (!fromHistory) pushHistory();
+  state.activePreset = name;
+  state.segments = BASE_SEGMENTS.map(s => structuredClone(s));
+  for (const [id, ov] of Object.entries(p.overrides || {})) {
+    const s = getSegment(id);
+    if (!s) continue;
+    Object.assign(s, ov);
+  }
+  state.order = p.enabled.slice();
+  for (const seg of BASE_SEGMENTS) {
+    if (!state.order.includes(seg.id)) state.order.push(seg.id);
+  }
+  state.enabled = p.enabled.slice();
+  state.separator = p.separator;
+  state.customSeparator = '';
+  el.separatorSelect.value = [...el.separatorSelect.options].map(o => o.value).includes(p.separator) ? p.separator : 'custom';
+  el.customSepRow.style.display = el.separatorSelect.value === 'custom' ? 'flex' : 'none';
+  renderAll();
+}
+
+/* ============================================================
+ * Scenario / derived
+ * ============================================================ */
+function scenarioContextPct() {
+  if (state.scenario === 'low-ctx') return 82;
+  return state.contextPct;
+}
+function scenarioShowTask() {
+  if (state.scenario === 'no-task') return false;
+  return state.showTask;
+}
+function scenarioEnabledSet() {
+  const s = new Set(state.enabled);
+  state.customSegments.forEach(c => { if (c.enabled) s.add(c.id); });
+  if (state.scenario === 'all-off') {
+    ['caveman','enforcer','gsdupdate'].forEach(id => s.delete(id));
+  }
+  return s;
+}
+function contextBarText() {
+  const pct = scenarioContextPct();
+  const filled = Math.floor(pct / 10);
+  const bar = '█'.repeat(filled) + '░'.repeat(10 - filled);
+  return `${bar} ${pct}%`;
+}
+function contextBarColor() {
+  const pct = scenarioContextPct();
+  if (pct < 50) return 'green';
+  if (pct < 65) return 'yellow';
+  if (pct < 80) return 'orange';
+  return 'brightRed';
+}
+function longPathDirText() {
+  return 'projects/caveman-harness/docs/playground-deep';
+}
+function truncateMiddle(s, max) {
+  if (!max || s.length <= max) return s;
+  if (max < 5) return s.slice(0, max);
+  const keep = max - 1;
+  const left = Math.ceil(keep / 2);
+  const right = Math.floor(keep / 2);
+  return s.slice(0, left) + '…' + s.slice(s.length - right);
+}
+function textForSegment(seg) {
+  if (!seg) return '';
+  let raw;
+  if (seg.id === 'context') raw = contextBarText();
+  else if (seg.id === 'task' && !scenarioShowTask()) raw = '';
+  else if (seg.id === 'dir' && state.longPath) raw = longPathDirText();
+  else if (seg.id === 'exitstatus') raw = state.exitOk ? '✓' : '✗';
+  else raw = seg.text;
+
+  raw = applyCase(raw, seg.caseTransform);
+  if (seg.maxWidth && raw.length > seg.maxWidth) raw = truncateMiddle(raw, seg.maxWidth);
+  const br = BRACKETS[seg.bracket] || BRACKETS.none;
+  const icon = seg.icon ? seg.icon + ' ' : '';
+  return br.open + icon + raw + br.close;
+}
+function colorForSegment(seg) {
+  if (seg.id === 'context') return contextBarColor();
+  if (seg.id === 'exitstatus') return state.exitOk ? 'green' : 'red';
+  return seg.color;
+}
+function segmentHex(seg) {
+  if (seg.useHex) return seg.hex;
+  const name = colorForSegment(seg);
+  return ANSI_COLORS[name]?.hex || '#e5e5e5';
+}
+function segmentBgHex(seg) {
+  if (seg.useHexBg) return seg.hexBg;
+  if (seg.bgColor && seg.bgColor !== 'inherit') return ANSI_COLORS[seg.bgColor].hex;
+  return null;
+}
+
+/* ============================================================
+ * Theme
+ * ============================================================ */
+function applyTheme() {
+  const t = THEMES[state.theme] || THEMES.windows;
+  el.terminalMock.style.setProperty('--term-bg', t.bg);
+  el.terminalMock.style.setProperty('--term-fg', t.fg);
+  el.terminalMock.style.setProperty('--term-dim', t.dim);
+  el.terminalMock.style.setProperty('--term-font', state.font);
+  el.terminalMock.style.setProperty('--term-zoom', state.zoom);
+}
+
+/* ============================================================
+ * Rendering
+ * ============================================================ */
+function renderPresets() {
+  el.presets.innerHTML = '';
+  // Built-in
+  for (const [key, p] of Object.entries(PRESETS)) {
+    const b = document.createElement('button');
+    b.className = 'preset-btn' + (state.activePreset === key ? ' active' : '');
+    b.textContent = p.label;
+    b.onclick = () => applyPreset(key);
+    el.presets.appendChild(b);
+  }
+}
+
+function renderSavedPresets() {
+  const saved = loadSavedPresets();
+  el.savedPresetList.innerHTML = '';
+  const keys = Object.keys(saved);
+  if (keys.length === 0) {
+    el.savedPresetList.innerHTML = '<div class="hint">(none yet)</div>';
+    return;
+  }
+  keys.forEach(key => {
+    const row = document.createElement('div');
+    row.className = 'row';
+    row.style.marginTop = '4px';
+    const btn = document.createElement('button');
+    btn.className = 'preset-btn';
+    btn.style.flex = '1';
+    btn.textContent = saved[key].label || key;
+    btn.onclick = () => applyPreset(key);
+    const del = document.createElement('button');
+    del.className = 'mini-btn';
+    del.textContent = '×';
+    del.title = 'Delete';
+    del.onclick = () => { deleteSavedPreset(key); renderAll(); };
+    row.appendChild(btn);
+    row.appendChild(del);
+    el.savedPresetList.appendChild(row);
+  });
+}
+
+function renderSegmentList() {
+  el.segmentList.innerHTML = '';
+  const enabledSet = new Set(state.enabled);
+  // built-in segments
+  const rows = state.order.filter(id => !isCustomSeg(id));
+  rows.forEach((id, idx) => {
+    const seg = getSegment(id);
+    if (!seg) return;
+    el.segmentList.appendChild(makeSegmentRow(seg, idx, rows.length, enabledSet, false));
+  });
+}
+
+function renderCustomSegList() {
+  el.customSegList.innerHTML = '';
+  state.customSegments.forEach((seg, idx) => {
+    const card = document.createElement('div');
+    card.className = 'custom-seg-card';
+    const inp = document.createElement('input');
+    inp.type = 'text';
+    inp.value = seg.text;
+    inp.placeholder = 'Custom text…';
+    inp.oninput = () => { seg.text = inp.value; renderAll(); };
+    const right = document.createElement('div');
+    right.style.display = 'flex';
+    right.style.gap = '3px';
+    const colSel = document.createElement('select');
+    colSel.style.width = '92px';
+    for (const [key, c] of Object.entries(ANSI_COLORS)) {
+      const opt = document.createElement('option');
+      opt.value = key; opt.textContent = c.label;
+      if (seg.color === key) opt.selected = true;
+      colSel.appendChild(opt);
+    }
+    colSel.onchange = () => { seg.color = colSel.value; renderAll(); };
+    const enCb = document.createElement('input');
+    enCb.type = 'checkbox';
+    enCb.checked = seg.enabled;
+    enCb.onchange = () => { seg.enabled = enCb.checked; renderAll(); };
+    const del = document.createElement('button');
+    del.className = 'mini-btn';
+    del.textContent = '×';
+    del.onclick = () => {
+      pushHistory();
+      state.customSegments.splice(idx, 1);
+      state.order = state.order.filter(x => x !== seg.id);
+      renderAll();
+    };
+    right.appendChild(enCb);
+    right.appendChild(colSel);
+    right.appendChild(del);
+    card.appendChild(inp);
+    card.appendChild(right);
+    el.customSegList.appendChild(card);
+  });
+}
+
+function makeSegmentRow(seg, idx, totalLen, enabledSet, isCustom) {
+  const row = document.createElement('div');
+  const enabled = enabledSet.has(seg.id);
+  row.className = 'segment' + (enabled ? '' : ' disabled');
+
+  const cb = document.createElement('input');
+  cb.type = 'checkbox';
+  cb.checked = enabled;
+  cb.onchange = () => {
+    pushHistory();
+    if (cb.checked) {
+      if (!state.enabled.includes(seg.id)) state.enabled.push(seg.id);
+    } else {
+      state.enabled = state.enabled.filter(x => x !== seg.id);
+    }
+    renderAll();
+  };
+  row.appendChild(cb);
+
+  const labelCol = document.createElement('div');
+  labelCol.className = 'segment-label';
+  const top = document.createElement('div');
+  top.textContent = seg.label || seg.text;
+  const prev = document.createElement('div');
+  prev.className = 'segment-preview';
+  prev.textContent = textForSegment(seg);
+  labelCol.appendChild(top);
+  labelCol.appendChild(prev);
+  row.appendChild(labelCol);
+
+  const colorSel = document.createElement('select');
+  for (const [key, c] of Object.entries(ANSI_COLORS)) {
+    const opt = document.createElement('option');
+    opt.value = key; opt.textContent = c.label;
+    if (seg.color === key) opt.selected = true;
+    colorSel.appendChild(opt);
+  }
+  colorSel.onchange = () => { pushHistory(); seg.color = colorSel.value; seg.useHex = false; renderAll(); };
+  row.appendChild(colorSel);
+
+  const bold = document.createElement('span');
+  bold.className = 'mini-toggle' + (seg.bold ? ' active' : '');
+  bold.textContent = 'B'; bold.title = 'Bold';
+  bold.onclick = () => { pushHistory(); seg.bold = !seg.bold; renderAll(); };
+  row.appendChild(bold);
+
+  const dim = document.createElement('span');
+  dim.className = 'mini-toggle' + (seg.dim ? ' active' : '');
+  dim.textContent = 'D'; dim.title = 'Dim';
+  dim.onclick = () => { pushHistory(); seg.dim = !seg.dim; renderAll(); };
+  row.appendChild(dim);
+
+  const arrows = document.createElement('div');
+  arrows.style.display = 'flex';
+  arrows.style.gap = '3px';
+  const up = document.createElement('button');
+  up.className = 'arrow-btn'; up.textContent = '↑'; up.disabled = idx === 0;
+  up.onclick = () => { pushHistory(); moveSegment(seg.id, -1); };
+  const dn = document.createElement('button');
+  dn.className = 'arrow-btn'; dn.textContent = '↓'; dn.disabled = idx === totalLen - 1;
+  dn.onclick = () => { pushHistory(); moveSegment(seg.id, +1); };
+  arrows.appendChild(up); arrows.appendChild(dn);
+  row.appendChild(arrows);
+
+  // expand toggle
+  const expandBtn = document.createElement('button');
+  expandBtn.className = 'expand-toggle';
+  const isExpanded = state.expandedSegments.has(seg.id);
+  expandBtn.textContent = isExpanded ? '▾ less' : '▸ more…';
+  expandBtn.onclick = () => {
+    if (isExpanded) state.expandedSegments.delete(seg.id);
+    else state.expandedSegments.add(seg.id);
+    renderAll();
+  };
+  row.appendChild(expandBtn);
+
+  if (isExpanded) {
+    row.appendChild(buildExpandedRow(seg));
+  }
+  return row;
+}
+
+function buildExpandedRow(seg) {
+  const g = document.createElement('div');
+  g.className = 'segment-expanded';
+
+  // italic / underline / strikethrough
+  const i = mkMini('I', seg.italic, () => { pushHistory(); seg.italic = !seg.italic; renderAll(); }, 'Italic');
+  const u = mkMini('U', seg.underline, () => { pushHistory(); seg.underline = !seg.underline; renderAll(); }, 'Underline');
+  const s = mkMini('S', seg.strikethrough, () => { pushHistory(); seg.strikethrough = !seg.strikethrough; renderAll(); }, 'Strikethrough');
+  const styleBox = document.createElement('div');
+  styleBox.style.display = 'flex';
+  styleBox.style.gap = '3px';
+  [i,u,s].forEach(x => styleBox.appendChild(x));
+  g.appendChild(mkLabel('Style'));
+  g.appendChild(styleBox);
+
+  // Background color
+  const bgSel = document.createElement('select');
+  for (const [k, c] of Object.entries(ANSI_COLORS)) {
+    const o = document.createElement('option');
+    o.value = k; o.textContent = c.label;
+    if (seg.bgColor === k) o.selected = true;
+    bgSel.appendChild(o);
+  }
+  bgSel.onchange = () => { pushHistory(); seg.bgColor = bgSel.value; seg.useHexBg = false; renderAll(); };
+  g.appendChild(mkLabel('BG color'));
+  g.appendChild(bgSel);
+
+  // Hex color override
+  const hexWrap = document.createElement('div');
+  hexWrap.style.display = 'flex';
+  hexWrap.style.gap = '4px';
+  hexWrap.style.alignItems = 'center';
+  const hexCheck = document.createElement('input');
+  hexCheck.type = 'checkbox';
+  hexCheck.checked = !!seg.useHex;
+  hexCheck.onchange = () => { pushHistory(); seg.useHex = hexCheck.checked; renderAll(); };
+  const hexInp = document.createElement('input');
+  hexInp.type = 'color';
+  hexInp.value = seg.hex;
+  hexInp.oninput = () => { seg.hex = hexInp.value; seg.useHex = true; hexCheck.checked = true; renderAll(); };
+  hexWrap.appendChild(hexCheck);
+  hexWrap.appendChild(hexInp);
+  g.appendChild(mkLabel('FG hex'));
+  g.appendChild(hexWrap);
+
+  // Hex bg
+  const hexBgWrap = document.createElement('div');
+  hexBgWrap.style.display = 'flex';
+  hexBgWrap.style.gap = '4px';
+  hexBgWrap.style.alignItems = 'center';
+  const hexBgCheck = document.createElement('input');
+  hexBgCheck.type = 'checkbox';
+  hexBgCheck.checked = !!seg.useHexBg;
+  hexBgCheck.onchange = () => { pushHistory(); seg.useHexBg = hexBgCheck.checked; renderAll(); };
+  const hexBgInp = document.createElement('input');
+  hexBgInp.type = 'color';
+  hexBgInp.value = seg.hexBg;
+  hexBgInp.oninput = () => { seg.hexBg = hexBgInp.value; seg.useHexBg = true; hexBgCheck.checked = true; renderAll(); };
+  hexBgWrap.appendChild(hexBgCheck);
+  hexBgWrap.appendChild(hexBgInp);
+  g.appendChild(mkLabel('BG hex'));
+  g.appendChild(hexBgWrap);
+
+  // Icon
+  const iconSel = document.createElement('select');
+  ICON_SET.forEach(ic => {
+    const o = document.createElement('option');
+    o.value = ic; o.textContent = ic || '(none)';
+    if (seg.icon === ic) o.selected = true;
+    iconSel.appendChild(o);
+  });
+  iconSel.onchange = () => { pushHistory(); seg.icon = iconSel.value; renderAll(); };
+  g.appendChild(mkLabel('Icon'));
+  g.appendChild(iconSel);
+
+  // Bracket
+  const brSel = document.createElement('select');
+  for (const [k, b] of Object.entries(BRACKETS)) {
+    const o = document.createElement('option');
+    o.value = k;
+    o.textContent = b.open ? `${k} ${b.open}x${b.close}` : 'none';
+    if (seg.bracket === k) o.selected = true;
+    brSel.appendChild(o);
+  }
+  brSel.onchange = () => { pushHistory(); seg.bracket = brSel.value; renderAll(); };
+  g.appendChild(mkLabel('Bracket'));
+  g.appendChild(brSel);
+
+  // Max width
+  const mwInp = document.createElement('input');
+  mwInp.type = 'number';
+  mwInp.min = 0;
+  mwInp.max = 60;
+  mwInp.value = seg.maxWidth || 0;
+  mwInp.oninput = () => { seg.maxWidth = parseInt(mwInp.value, 10) || 0; renderAll(); };
+  g.appendChild(mkLabel('Max width'));
+  g.appendChild(mwInp);
+
+  // Case transform
+  const caseSel = document.createElement('select');
+  [['none','(as typed)'],['upper','UPPERCASE'],['lower','lowercase'],['title','Title Case']].forEach(([v,l]) => {
+    const o = document.createElement('option');
+    o.value = v; o.textContent = l;
+    if (seg.caseTransform === v) o.selected = true;
+    caseSel.appendChild(o);
+  });
+  caseSel.onchange = () => { pushHistory(); seg.caseTransform = caseSel.value; renderAll(); };
+  g.appendChild(mkLabel('Case'));
+  g.appendChild(caseSel);
+
+  // Separator before (overrides the global separator on this segment's left side)
+  const sepOptions = [
+    ['', '(default)'],
+    [' │ ', ' │  default'],
+    [' · ', ' ·  dot'],
+    [' | ', ' |  pipe'],
+    [' → ', ' →  arrow'],
+    [' ← ', ' ←  left arrow'],
+    [' / ', ' /  slash'],
+    [' • ', ' •  bullet'],
+    [' ─ ', ' ─  em dash'],
+    [' ~ ', ' ~  tilde'],
+    [' , ', ' ,  comma'],
+    [' ✦ ', ' ✦  star'],
+    ['  ', '(double space)'],
+    ['custom', 'custom…'],
+  ];
+  const sepWrap = document.createElement('div');
+  sepWrap.style.display = 'flex'; sepWrap.style.gap = '4px'; sepWrap.style.alignItems = 'center';
+  const sepSel = document.createElement('select');
+  sepOptions.forEach(([v, l]) => {
+    const o = document.createElement('option');
+    o.value = v; o.textContent = l;
+    if (v === seg.sepBefore || (v === 'custom' && seg.sepBefore && !sepOptions.slice(1,-1).some(x => x[0] === seg.sepBefore))) {
+      o.selected = true;
+    }
+    sepSel.appendChild(o);
+  });
+  // If seg.sepBefore is non-empty and not a preset, show as custom with the literal
+  const customSepInp = document.createElement('input');
+  customSepInp.type = 'text';
+  customSepInp.maxLength = 12;
+  customSepInp.placeholder = 'e.g. " → "';
+  customSepInp.style.width = '70px';
+  const presetValues = sepOptions.map(o => o[0]).filter(v => v && v !== 'custom');
+  if (seg.sepBefore && !presetValues.includes(seg.sepBefore)) {
+    sepSel.value = 'custom';
+    customSepInp.value = seg.sepBefore;
+  }
+  customSepInp.style.display = sepSel.value === 'custom' ? '' : 'none';
+  sepSel.onchange = () => {
+    pushHistory();
+    if (sepSel.value === 'custom') {
+      customSepInp.style.display = '';
+      seg.sepBefore = customSepInp.value || '';
+    } else {
+      customSepInp.style.display = 'none';
+      seg.sepBefore = sepSel.value;
+    }
+    renderAll();
+  };
+  customSepInp.oninput = () => {
+    seg.sepBefore = customSepInp.value;
+    renderAll();
+  };
+  sepWrap.appendChild(sepSel);
+  sepWrap.appendChild(customSepInp);
+  g.appendChild(mkLabel('Sep before'));
+  g.appendChild(sepWrap);
+
+  // Caption (renders on the second line under this segment)
+  const capInp = document.createElement('input');
+  capInp.type = 'text';
+  capInp.value = seg.caption || '';
+  capInp.placeholder = '(none)';
+  capInp.oninput = () => { seg.caption = capInp.value; renderAll(); };
+  g.appendChild(mkLabel('Caption'));
+  g.appendChild(capInp);
+
+  // Text override
+  const toInp = document.createElement('input');
+  toInp.type = 'text';
+  toInp.value = seg.text;
+  toInp.oninput = () => { seg.text = toInp.value; renderAll(); };
+  g.appendChild(mkLabel('Text'));
+  g.appendChild(toInp);
+
+  return g;
+}
+function mkMini(t, active, cb, title) {
+  const x = document.createElement('span');
+  x.className = 'mini-toggle' + (active ? ' active' : '');
+  x.textContent = t;
+  x.title = title || t;
+  x.onclick = cb;
+  return x;
+}
+function mkLabel(t) {
+  const l = document.createElement('label');
+  l.textContent = t;
+  return l;
+}
+
+function moveSegment(id, delta) {
+  const i = state.order.indexOf(id);
+  const j = i + delta;
+  if (j < 0 || j >= state.order.length) return;
+  [state.order[i], state.order[j]] = [state.order[j], state.order[i]];
+  renderAll();
+}
+
+function renderPreview() {
+  el.preview.innerHTML = '';
+  const sep = currentSeparator();
+  const enabledSet = scenarioEnabledSet();
+  const activeSegs = state.order
+    .map(id => getSegment(id))
+    .filter(seg => seg && enabledSet.has(seg.id) && (seg.id !== 'task' || scenarioShowTask()));
+
+  let totalChars = 0;
+
+  activeSegs.forEach((seg, i) => {
+    const span = document.createElement('span');
+    span.style.color = segmentHex(seg);
+    const bg = segmentBgHex(seg);
+    if (bg) { span.style.backgroundColor = bg; span.style.padding = '0 4px'; }
+    if (seg.bold) span.style.fontWeight = '700';
+    if (seg.dim) span.style.opacity = '0.6';
+    if (seg.italic) span.style.fontStyle = 'italic';
+    const deco = [];
+    if (seg.underline) deco.push('underline');
+    if (seg.strikethrough) deco.push('line-through');
+    if (deco.length) span.style.textDecoration = deco.join(' ');
+    const t = textForSegment(seg);
+    span.textContent = t;
+    totalChars += t.length;
+    el.preview.appendChild(span);
+    if (i < activeSegs.length - 1) {
+      // Use the NEXT segment's sepBefore override, if present; else fall back to the global separator.
+      const next = activeSegs[i + 1];
+      const thisSep = (next && next.sepBefore) ? next.sepBefore : sep;
+      const s = document.createElement('span');
+      s.textContent = thisSep;
+      const sepHex = ANSI_COLORS[state.sepColor]?.hex || '#586069';
+      s.style.color = sepHex;
+      if (state.sepBold) s.style.fontWeight = '700';
+      if (state.sepDim) s.style.opacity = '0.6';
+      el.preview.appendChild(s);
+      totalChars += thisSep.length;
+    }
+  });
+
+  el.charCount.textContent = totalChars;
+  el.segCount.textContent = activeSegs.length;
+  const pct = Math.min(100, (totalChars / 160) * 100);
+  el.budgetFill.style.width = pct + '%';
+  el.budgetFill.className = totalChars > 140 ? 'danger' : totalChars > 100 ? 'warn' : '';
+
+  // Caption line: mirror line 1's layout so each caption sits exactly under its segment.
+  el.caption.innerHTML = '';
+  const hasAnyCaption = activeSegs.some(s => s.caption);
+  if (!state.showCaptions || !hasAnyCaption) return;
+  const children = [...el.preview.children];
+  let segIdx = 0;
+  children.forEach((child, i) => {
+    const cell = document.createElement('span');
+    cell.className = 'cap-cell';
+    cell.style.width = child.offsetWidth + 'px';
+    const isSegSpan = (i % 2 === 0);
+    if (isSegSpan) {
+      const seg = activeSegs[segIdx++];
+      cell.textContent = seg.caption || '';
+    } else {
+      cell.textContent = '';
+    }
+    el.caption.appendChild(cell);
+  });
+}
+
+function currentSeparator() {
+  if (el.separatorSelect.value === 'custom') return el.customSep.value || ' | ';
+  return el.separatorSelect.value;
+}
+
+/* ============================================================
+ * ANSI / prompt output
+ * ============================================================ */
+function ansiFg(seg) {
+  if (seg.useHex) {
+    const [r,g,b] = hexToRgb(seg.hex);
+    return `38;2;${r};${g};${b}`;
+  }
+  const c = ANSI_COLORS[colorForSegment(seg)];
+  return c?.code ?? null;
+}
+function ansiBg(seg) {
+  if (seg.useHexBg) {
+    const [r,g,b] = hexToRgb(seg.hexBg);
+    return `48;2;${r};${g};${b}`;
+  }
+  if (seg.bgColor && seg.bgColor !== 'inherit') {
+    return ANSI_COLORS[seg.bgColor].bg;
+  }
+  return null;
+}
+function hexToRgb(h) {
+  const m = h.replace('#','');
+  const n = parseInt(m.length === 3 ? m.split('').map(c=>c+c).join('') : m, 16);
+  return [(n>>16)&255, (n>>8)&255, n&255];
+}
+
+function wrapSepAnsi(literal) {
+  const codes = [];
+  if (state.sepBold) codes.push('1');
+  if (state.sepDim) codes.push('2');
+  const c = ANSI_COLORS[state.sepColor];
+  if (c && c.code != null) codes.push(String(c.code));
+  if (!codes.length) return literal;
+  return `\\x1b[${codes.join(';')}m${literal}\\x1b[0m`;
+}
+function buildAnsiString() {
+  const sep = currentSeparator();
+  const enabledSet = scenarioEnabledSet();
+  const active = state.order
+    .map(id => getSegment(id))
+    .filter(seg => seg && enabledSet.has(seg.id) && (seg.id !== 'task' || scenarioShowTask()));
+  const chunks = active.map(seg => {
+    const codes = [];
+    if (seg.bold) codes.push('1');
+    if (seg.dim) codes.push('2');
+    if (seg.italic) codes.push('3');
+    if (seg.underline) codes.push('4');
+    if (seg.strikethrough) codes.push('9');
+    const fg = ansiFg(seg); if (fg != null) codes.push(String(fg));
+    const bg = ansiBg(seg); if (bg != null) codes.push(String(bg));
+    const text = textForSegment(seg);
+    if (!codes.length) return text;
+    return `\\x1b[${codes.join(';')}m${text}\\x1b[0m`;
+  });
+  // Join with either the segment's per-seg override or the default separator, ANSI-wrapped.
+  let out = '';
+  for (let i = 0; i < chunks.length; i++) {
+    if (i > 0) {
+      const next = active[i];
+      out += wrapSepAnsi(next.sepBefore || sep);
+    }
+    out += chunks[i];
+  }
+  // Optional second line — captions aligned to line 1's segment widths.
+  const hasAnyCaption = active.some(s => s.caption);
+  if (state.showCaptions && hasAnyCaption) {
+    let line2 = '\\x1b[2;90m';
+    for (let i = 0; i < active.length; i++) {
+      const seg = active[i];
+      const segText = textForSegment(seg);
+      const w = visibleLen(segText);
+      const cap = (seg.caption || '').slice(0, w);
+      line2 += cap.padEnd(w);
+      if (i < active.length - 1) {
+        const s = active[i + 1].sepBefore || sep;
+        line2 += ' '.repeat(visibleLen(s));
+      }
+    }
+    line2 += '\\x1b[0m';
+    out += '\\n' + line2;
+  }
+  return out;
+}
+function visibleLen(s) {
+  // Count Unicode code points. Treat most emojis / double-width as 2 cols (rough heuristic).
+  return [...s].reduce((n, ch) => {
+    const cp = ch.codePointAt(0);
+    // Emoji + misc symbol ranges -> 2 cols in most monospaced terminal fonts.
+    if (cp >= 0x1F000 || (cp >= 0x2600 && cp <= 0x27BF)) return n + 2;
+    return n + 1;
+  }, 0);
+}
+
+function describeSegment(seg) {
+  const parts = [];
+  if (seg.useHex) parts.push(`hex ${seg.hex}`);
+  else {
+    const c = ANSI_COLORS[colorForSegment(seg)];
+    if (c) parts.push(c.label);
+  }
+  if (seg.bgColor !== 'inherit' || seg.useHexBg) {
+    parts.push('bg ' + (seg.useHexBg ? seg.hexBg : ANSI_COLORS[seg.bgColor].label));
+  }
+  const styles = [];
+  if (seg.bold) styles.push('bold');
+  if (seg.dim) styles.push('dim');
+  if (seg.italic) styles.push('italic');
+  if (seg.underline) styles.push('underline');
+  if (seg.strikethrough) styles.push('strikethrough');
+  if (styles.length) parts.push(styles.join(' + '));
+  if (seg.icon) parts.push(`icon ${seg.icon}`);
+  if (seg.bracket !== 'none') parts.push(`${seg.bracket} brackets`);
+  if (seg.maxWidth) parts.push(`max width ${seg.maxWidth} chars`);
+  if (seg.caseTransform && seg.caseTransform !== 'none') parts.push(`case: ${seg.caseTransform}`);
+  if (seg.sepBefore) parts.push(`sep-before: "${seg.sepBefore}"`);
+  if (seg.caption) parts.push(`caption: "${seg.caption}"`);
+  return parts.join(', ');
+}
+
+function renderPromptOutput() {
+  const enabledSet = scenarioEnabledSet();
+  const active = state.order
+    .map(id => getSegment(id))
+    .filter(seg => seg && enabledSet.has(seg.id));
+  const sep = currentSeparator();
+  const orderStr = active.map(s => s.label || s.text).join(' · ');
+  const segLines = active.map(s => `  - ${s.label || s.text} → ${describeSegment(s)}`).join('\n');
+  const ansi = buildAnsiString();
+  const sepStyles = [];
+  if (state.sepBold) sepStyles.push('bold');
+  if (state.sepDim) sepStyles.push('dim');
+  const sepDesc = `\`${sep}\` (color: ${ANSI_COLORS[state.sepColor].label}${sepStyles.length ? ', ' + sepStyles.join(' + ') : ''})`;
+
+  const prompt =
+`Update my Claude Code statusline (\`~/.claude/hooks/gsd-statusline.js\`) to this layout.
+
+Segment order (left to right):
+${orderStr}
+
+Segments (with styling):
+${segLines}
+
+Separator between segments: ${sepDesc}. Copy the separator verbatim, including spaces.
+
+Visual sample (what the final output should look like, ANSI-encoded):
+\`\`\`
+${ansi}
+\`\`\`
+
+Requirements:
+- Each segment is detected independently in the script. If its condition is not met at runtime, skip it (no empty slots, no dangling separator).
+- Preserve existing safety guards: outer try/catch on all I/O, cap filesystem walk-ups, stop at \$HOME.
+- Keep the caveman flag-file detection (\`~/.claude/.caveman-active\`) and the enforcer walk-up (nearest \`.git\` with \`.plan-enforcer/ledger.md\`) unchanged.
+${state.showCaptions && state.segments.some(s => state.enabled.includes(s.id) && s.caption) ? `- Emit a SECOND line after the main statusline, separated by \`\\n\`, containing dim-gray lowercase captions aligned under each segment. Captions per segment are shown in the "Segments (with styling)" list above (look for \`caption: "..."\`). Each caption must be padded (space-right) to match the visible width of its corresponding segment on line 1, so captions sit directly underneath. Spacers between captions must match the visible width of the separator used above them (including any per-segment \`sep-before\` override). Use ANSI \`\\x1b[2;90m\` for the caption line and close with \`\\x1b[0m\`. Claude Code renders multi-line statuslines correctly — confirmed via spike test.` : ''}
+- For any badge not yet implemented (git branch, ahead/behind, dirty, untracked, PR count, commit age, time, session duration, node/python version, battery, tokens saved, enforcer progress, GSD phase, cost estimate, todo count, aws/kubectl/gcloud context, pomodoro), add detection blocks with:
+  * Short timeout (< 500ms).
+  * Fail-silent on any error.
+  * Cache slow results to \`os.tmpdir()\` with a stale threshold.
+- Preserve the JSON stdin contract and the outer try/catch.
+- Smoke-test from the shell after editing:
+
+  \`\`\`bash
+  echo '{"model":{"display_name":"Opus 4.7"},"workspace":{"current_dir":"\${PWD}"},"session_id":"t","context_window":{"remaining_percentage":90}}' \\
+    | node ~/.claude/hooks/gsd-statusline.js
+  \`\`\`
+
+Show me the final statusline.js after editing, not just a diff or description.`;
+
+  el.promptOut.textContent = prompt;
+  el.jsonOut.textContent = JSON.stringify(stateSerialize(), null, 2);
+}
+
+/* ============================================================
+ * Saved presets (localStorage)
+ * ============================================================ */
+const LS_KEY = 'statusline-playground-saved-presets';
+function loadSavedPresets() {
+  try {
+    return JSON.parse(localStorage.getItem(LS_KEY) || '{}');
+  } catch (e) { return {}; }
+}
+function writeSavedPresets(obj) {
+  try { localStorage.setItem(LS_KEY, JSON.stringify(obj)); } catch (e) {}
+}
+function saveCurrentAsPreset() {
+  const name = prompt('Name this preset:');
+  if (!name) return;
+  const key = 'saved:' + name.toLowerCase().replace(/\s+/g, '-');
+  const saved = loadSavedPresets();
+  // Snapshot: enabled ids, separator, per-segment overrides (non-default fields)
+  const overrides = {};
+  for (const seg of state.segments) {
+    const base = BASE_SEGMENTS.find(s => s.id === seg.id);
+    if (!base) continue;
+    const ov = {};
+    for (const k of Object.keys(seg)) {
+      if (JSON.stringify(seg[k]) !== JSON.stringify(base[k])) ov[k] = seg[k];
+    }
+    if (Object.keys(ov).length) overrides[seg.id] = ov;
+  }
+  saved[key] = {
+    label: name,
+    enabled: state.enabled.slice(),
+    separator: currentSeparator(),
+    overrides,
+  };
+  writeSavedPresets(saved);
+  toast(`Saved "${name}"`);
+  renderAll();
+}
+function deleteSavedPreset(key) {
+  const saved = loadSavedPresets();
+  delete saved[key];
+  writeSavedPresets(saved);
+  toast('Deleted');
+}
+
+/* ============================================================
+ * URL sharing
+ * ============================================================ */
+function shareUrl() {
+  const payload = btoa(unescape(encodeURIComponent(JSON.stringify(stateSerialize()))));
+  const url = location.origin + location.pathname + '#s=' + payload;
+  navigator.clipboard.writeText(url).then(() => toast('URL copied to clipboard'));
+}
+function loadFromHash() {
+  const h = location.hash.slice(1);
+  if (!h.startsWith('s=')) return;
+  try {
+    const raw = decodeURIComponent(escape(atob(h.slice(2))));
+    const data = JSON.parse(raw);
+    stateDeserialize(data);
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+/* ============================================================
+ * Randomize
+ * ============================================================ */
+function randomize() {
+  pushHistory();
+  const colorKeys = Object.keys(ANSI_COLORS).filter(k => k !== 'inherit' && k !== 'black');
+  const sepChoices = [' │ ',' · ',' | ','  ',' → ',' / ',' • ',' ─ ',' ~ ',' ✦ '];
+  const segIds = BASE_SEGMENTS.map(s => s.id);
+  // 5-10 segments enabled
+  const n = 5 + Math.floor(Math.random() * 6);
+  const shuffled = segIds.slice().sort(() => Math.random() - 0.5);
+  state.enabled = shuffled.slice(0, n);
+  state.order = shuffled.concat(segIds.filter(id => !shuffled.includes(id)));
+  // Random styling
+  for (const seg of state.segments) {
+    seg.color = colorKeys[Math.floor(Math.random() * colorKeys.length)];
+    seg.bold = Math.random() < 0.3;
+    seg.dim = Math.random() < 0.25;
+    seg.italic = Math.random() < 0.15;
+    seg.underline = false;
+    seg.strikethrough = false;
+    seg.bgColor = 'inherit';
+    seg.useHex = false;
+    seg.useHexBg = false;
+    seg.icon = '';
+    seg.bracket = 'none';
+    seg.maxWidth = 0;
+  }
+  state.separator = sepChoices[Math.floor(Math.random() * sepChoices.length)];
+  el.separatorSelect.value = sepChoices.includes(state.separator) ? state.separator : 'custom';
+  el.customSepRow.style.display = el.separatorSelect.value === 'custom' ? 'flex' : 'none';
+  state.sepColor = colorKeys[Math.floor(Math.random() * colorKeys.length)];
+  renderAll();
+}
+
+/* ============================================================
+ * Undo / redo
+ * ============================================================ */
+function undo() {
+  if (!historyStack.length) return;
+  futureStack.push(JSON.stringify(stateSerialize()));
+  const prev = JSON.parse(historyStack.pop());
+  stateDeserialize(prev);
+  // Sync separator UI
+  el.separatorSelect.value = [...el.separatorSelect.options].map(o => o.value).includes(state.separator) ? state.separator : 'custom';
+  el.customSepRow.style.display = el.separatorSelect.value === 'custom' ? 'flex' : 'none';
+  el.customSep.value = state.customSeparator || '';
+  renderAll();
+}
+function redo() {
+  if (!futureStack.length) return;
+  historyStack.push(JSON.stringify(stateSerialize()));
+  const next = JSON.parse(futureStack.pop());
+  stateDeserialize(next);
+  el.separatorSelect.value = [...el.separatorSelect.options].map(o => o.value).includes(state.separator) ? state.separator : 'custom';
+  el.customSepRow.style.display = el.separatorSelect.value === 'custom' ? 'flex' : 'none';
+  renderAll();
+}
+
+/* ============================================================
+ * Toast
+ * ============================================================ */
+let toastTimer;
+function toast(msg) {
+  el.toast.textContent = msg;
+  el.toast.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.toast.classList.remove('show'), 1600);
+}
+
+/* ============================================================
+ * Sep color dropdown
+ * ============================================================ */
+function populateSepColor() {
+  el.sepColor.innerHTML = '';
+  for (const [k, c] of Object.entries(ANSI_COLORS)) {
+    const o = document.createElement('option');
+    o.value = k; o.textContent = c.label;
+    if (state.sepColor === k) o.selected = true;
+    el.sepColor.appendChild(o);
+  }
+}
+
+/* ============================================================
+ * Main render entry
+ * ============================================================ */
+function renderAll() {
+  applyTheme();
+  renderPresets();
+  renderSavedPresets();
+  renderSegmentList();
+  renderCustomSegList();
+  populateSepColor();
+  el.sepBold.classList.toggle('active', state.sepBold);
+  el.sepDim.classList.toggle('active', state.sepDim);
+  renderPreview();
+  renderPromptOutput();
+}
+
+/* ============================================================
+ * Event wiring
+ * ============================================================ */
+el.separatorSelect.onchange = () => {
+  pushHistory();
+  el.customSepRow.style.display = el.separatorSelect.value === 'custom' ? 'flex' : 'none';
+  if (el.separatorSelect.value !== 'custom') state.separator = el.separatorSelect.value;
+  renderAll();
+};
+el.customSep.oninput = () => {
+  state.customSeparator = el.customSep.value;
+  state.separator = el.customSep.value;
+  renderAll();
+};
+el.sepColor.onchange = () => { pushHistory(); state.sepColor = el.sepColor.value; renderAll(); };
+el.sepBold.onclick = () => { pushHistory(); state.sepBold = !state.sepBold; renderAll(); };
+el.sepDim.onclick = () => { pushHistory(); state.sepDim = !state.sepDim; renderAll(); };
+
+el.ctxRange.oninput = () => {
+  state.contextPct = parseInt(el.ctxRange.value, 10);
+  el.ctxLabel.textContent = state.contextPct + '%';
+  renderPreview();
+  renderPromptOutput();
+};
+el.showTask.onchange = () => { state.showTask = el.showTask.checked; renderAll(); };
+el.exitOk.onchange = () => { state.exitOk = el.exitOk.checked; renderAll(); };
+el.showCaptions.onchange = () => { state.showCaptions = el.showCaptions.checked; renderAll(); };
+el.themeSelect.onchange = () => { state.theme = el.themeSelect.value; renderAll(); };
+el.fontSelect.onchange = () => { state.font = el.fontSelect.value; renderAll(); };
+el.zoomSelect.onchange = () => { state.zoom = parseFloat(el.zoomSelect.value); renderAll(); };
+el.longpathCheck.onchange = () => { state.longPath = el.longpathCheck.checked; renderAll(); };
+
+el.statePills.forEach(p => {
+  p.onclick = () => {
+    state.scenario = p.dataset.scenario;
+    el.statePills.forEach(x => x.classList.toggle('active', x === p));
+    renderAll();
+  };
+});
+
+el.undoBtn.onclick = undo;
+el.redoBtn.onclick = redo;
+el.randomizeBtn.onclick = randomize;
+el.savePresetBtn.onclick = saveCurrentAsPreset;
+el.shareBtn.onclick = shareUrl;
+el.resetBtn.onclick = () => {
+  if (!confirm('Reset playground to defaults? Saved presets are kept.')) return;
+  pushHistory();
+  state = defaultState();
+  location.hash = '';
+  applyPreset('my-defaults');
+};
+el.addCustomBtn.onclick = () => {
+  pushHistory();
+  const id = 'custom_' + Date.now();
+  const seg = hydrateSegment({
+    id, label: 'Custom', text: 'Custom text', color: 'brightCyan', enabled: true
+  });
+  state.customSegments.push(seg);
+  state.order.push(id);
+  state.enabled.push(id);
+  renderAll();
+};
+
+// View toggle
+el.viewToggle.querySelectorAll('.mini-btn').forEach(b => {
+  b.onclick = () => {
+    el.viewToggle.querySelectorAll('.mini-btn').forEach(x => x.classList.remove('active'));
+    b.classList.add('active');
+    const isJson = b.dataset.view === 'json';
+    el.promptOut.style.display = isJson ? 'none' : 'block';
+    el.jsonOut.style.display  = isJson ? 'block' : 'none';
+  };
+});
+
+// Copy
+el.copyBtn.onclick = async () => {
+  const txt = el.jsonOut.style.display !== 'none' ? el.jsonOut.textContent : el.promptOut.textContent;
+  try {
+    await navigator.clipboard.writeText(txt);
+  } catch (e) {
+    const r = document.createRange();
+    r.selectNode(el.jsonOut.style.display !== 'none' ? el.jsonOut : el.promptOut);
+    window.getSelection().removeAllRanges();
+    window.getSelection().addRange(r);
+    document.execCommand('copy');
+    window.getSelection().removeAllRanges();
+  }
+  el.copyBtn.textContent = 'Copied!';
+  setTimeout(() => el.copyBtn.textContent = 'Copy', 1300);
+};
+
+/* Keyboard shortcuts */
+document.addEventListener('keydown', ev => {
+  if (ev.target.matches('input,select,textarea')) return;
+  if (ev.ctrlKey || ev.metaKey) {
+    if (ev.key === 'z') { ev.preventDefault(); undo(); return; }
+    if (ev.key === 'y' || (ev.shiftKey && ev.key === 'Z')) { ev.preventDefault(); redo(); return; }
+  }
+  if (ev.key === 'r' || ev.key === 'R') { ev.preventDefault(); randomize(); }
+  else if (ev.key === 'c' || ev.key === 'C') { ev.preventDefault(); el.copyBtn.click(); }
+  else if (ev.key === 's' || ev.key === 'S') { ev.preventDefault(); saveCurrentAsPreset(); }
+  else if (/^[1-9]$/.test(ev.key)) {
+    const keys = Object.keys(PRESETS);
+    const idx = parseInt(ev.key, 10) - 1;
+    if (keys[idx]) applyPreset(keys[idx]);
+  }
+});
+
+/* ============================================================
+ * Boot
+ * ============================================================ */
+function boot() {
+  if (!loadFromHash()) applyPreset('my-defaults');
+  else {
+    // Ensure UI reflects deserialized state
+    el.separatorSelect.value = [...el.separatorSelect.options].map(o => o.value).includes(state.separator) ? state.separator : 'custom';
+    el.customSepRow.style.display = el.separatorSelect.value === 'custom' ? 'flex' : 'none';
+    el.themeSelect.value = state.theme;
+    el.fontSelect.value = state.font;
+    el.zoomSelect.value = state.zoom;
+    renderAll();
+  }
+}
+boot();
+</script>
+</body>
+</html>
