@@ -36,7 +36,7 @@ design your own and share it with teammates.
 ### 1. Clone
 
 ```bash
-git clone https://github.com/<you>/.statusline ~/.statusline
+git clone https://github.com/jccidc/.statusline ~/.statusline
 ```
 
 ### 2. Copy the hook into place
