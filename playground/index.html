@@ -652,11 +652,13 @@ const ALL_SEGMENTS = [
   { id: 'gcloud',         label: 'gcloud account',   text: 'gcp:main',               color: 'brightBlue' },
   { id: 'context',        label: 'Context bar',      text: '█░░░░░░░░░ 12%',         color: 'green' },
   { id: 'tokens',         label: 'Tokens saved',     text: '~45k saved',             color: 'brightCyan' },
+  { id: 'block',          label: '5h quota',         text: '\u25F1 23% (4h 12m)',    color: 'brightCyan' },
+  { id: 'weekly',         label: 'Weekly quota',     text: '\u25D1 41% (3d 5h)',     color: 'brightBlue' },
   { id: 'sessTokens',     label: 'Session tokens',   text: '45.3k',                  color: 'brightCyan' },
   { id: 'sessCost',       label: 'Session cost',     text: '$2.14',                  color: 'brightGreen' },
   { id: 'cacheHit',       label: 'Cache hit %',      text: '78% cached',             color: 'orange' },
   { id: 'todayCost',      label: "Today's cost",     text: '$14.82 today',           color: 'brightGreen' },
-  { id: 'msgs5h',         label: 'Messages / 5h',    text: '23 msgs/5h',             color: 'brightYellow' },
+  { id: 'msgs5h',         label: 'Messages / 5h (local)', text: '23 msgs/5h',        color: 'brightYellow' },
 ];
 
 // Seed every segment with full style fields
@@ -724,7 +726,7 @@ const PRESETS = {
   },
   'kitchen-sink': {
     label: 'Kitchen sink',
-    enabled: ['caveman','enforcer','branch','aheadbehind','dirty','untracked','prs','todos','enforcerprog','clock','session','model','task','dir','node','battery','context','tokens','cost'],
+    enabled: ['caveman','enforcer','branch','aheadbehind','dirty','untracked','prs','todos','enforcerprog','clock','session','model','task','dir','node','battery','context','block','weekly','tokens','cost'],
     separator: ' · ',
     overrides: {},
   },
@@ -776,7 +778,7 @@ const PRESETS = {
   },
   'dashboard': {
     label: 'Dashboard',
-    enabled: ['caveman','enforcer','branch','aheadbehind','dirty','commitage','model','task','clock','session','context','tokens'],
+    enabled: ['caveman','enforcer','branch','aheadbehind','dirty','commitage','model','task','clock','session','context','block','weekly','tokens'],
     separator: ' │ ',
     overrides: {
       branch: { icon: '🌿', bracket: 'square' },
@@ -1617,6 +1619,8 @@ function renderPromptOutput() {
   const active = state.order
     .map(id => getSegment(id))
     .filter(seg => seg && enabledSet.has(seg.id));
+  const wantsBlock = active.some(s => s.id === 'block');
+  const wantsWeekly = active.some(s => s.id === 'weekly');
   const sep = currentSeparator();
   const orderStr = active.map(s => s.label || s.text).join(' · ');
   const segLines = active.map(s => `  - ${s.label || s.text} → ${describeSegment(s)}`).join('\n');
@@ -1646,6 +1650,9 @@ Requirements:
 - Each segment is detected independently in the script. If its condition is not met at runtime, skip it (no empty slots, no dangling separator).
 - Preserve existing safety guards: outer try/catch on all I/O, cap filesystem walk-ups, stop at \$HOME.
 - Keep the caveman flag-file detection (\`~/.claude/.caveman-active\`) and the enforcer walk-up (nearest \`.git\` with \`.plan-enforcer/ledger.md\`) unchanged.
+- Never probe Anthropic APIs, read OAuth credentials, or scrape \`/usage\` from the statusline. If Claude Code already provides a field on stdin, use that field directly.
+${wantsBlock ? '- For the 5-hour quota segment, read `data.rate_limits?.five_hour.used_percentage` and `data.rate_limits?.five_hour.resets_at` from the statusline JSON on stdin. Hide the segment entirely when `rate_limits.five_hour` is absent.' : ''}
+${wantsWeekly ? '- For the weekly quota segment, read `data.rate_limits?.seven_day.used_percentage` and `data.rate_limits?.seven_day.resets_at` from the statusline JSON on stdin. Hide the segment entirely when `rate_limits.seven_day` is absent.' : ''}
 ${state.showCaptions && state.segments.some(s => state.enabled.includes(s.id) && s.caption) ? `- Emit a SECOND line after the main statusline, separated by \`\\n\`, containing dim-gray lowercase captions aligned under each segment. Captions per segment are shown in the "Segments (with styling)" list above (look for \`caption: "..."\`). Each caption must be padded (space-right) to match the visible width of its corresponding segment on line 1, so captions sit directly underneath. Spacers between captions must match the visible width of the separator used above them (including any per-segment \`sep-before\` override). Use ANSI \`\\x1b[2;90m\` for the caption line and close with \`\\x1b[0m\`. Claude Code renders multi-line statuslines correctly — confirmed via spike test.` : ''}
 - For any badge not yet implemented (git branch, ahead/behind, dirty, untracked, PR count, commit age, time, session duration, node/python version, battery, tokens saved, enforcer progress, GSD phase, cost estimate, todo count, aws/kubectl/gcloud context, pomodoro), add detection blocks with:
   * Short timeout (< 500ms).
@@ -1655,7 +1662,7 @@ ${state.showCaptions && state.segments.some(s => state.enabled.includes(s.id) &&
 - Smoke-test from the shell after editing:
 
   \`\`\`bash
-  echo '{"model":{"display_name":"Opus 4.7"},"workspace":{"current_dir":"\${PWD}"},"session_id":"t","context_window":{"remaining_percentage":90}}' \\
+  echo '{"model":{"display_name":"Opus 4.7"},"workspace":{"current_dir":"\${PWD}"},"session_id":"t","context_window":{"remaining_percentage":90},"rate_limits":{"five_hour":{"used_percentage":23.5,"resets_at":1738425600},"seven_day":{"used_percentage":41.2,"resets_at":1738857600}}}' \\
     | node ~/.claude/hooks/gsd-statusline.js
   \`\`\`
 

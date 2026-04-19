@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// gsd-hook-version: 1.34.2
+// gsd-hook-version: 1.35.0
 // Claude Code Statusline - GSD Edition
 // Shows: model | current task | directory | context usage
 
@@ -257,6 +257,27 @@ process.stdin.on('end', () => {
       if (c < 100) return '$' + c.toFixed(2);
       return '$' + c.toFixed(0);
     }
+    function formatResetCountdown(unixSec) {
+      if (!Number.isFinite(unixSec)) return '';
+      const totalMinutes = Math.max(0, Math.ceil((unixSec * 1000 - Date.now()) / 60000));
+      if (totalMinutes < 1) return 'reset soon';
+      const days = Math.floor(totalMinutes / (24 * 60));
+      const hours = Math.floor((totalMinutes % (24 * 60)) / 60);
+      const mins = totalMinutes % 60;
+      if (days > 0) return `${days}d ${hours}h`;
+      if (hours > 0) return `${hours}h ${mins}m`;
+      return `${mins}m`;
+    }
+    function formatRateLimit(limit, symbol) {
+      if (!limit || !Number.isFinite(limit.used_percentage)) return null;
+      const pct = Math.max(0, Math.min(100, Math.round(limit.used_percentage)));
+      const reset = formatResetCountdown(limit.resets_at);
+      const text = `${symbol} ${pct}%${reset ? ` (${reset})` : ''}`;
+      let codes = '96';
+      if (pct >= 80) codes = '1;31';
+      else if (pct >= 50) codes = '38;5;208';
+      return { text, codes };
+    }
 
     // Current session stats (live, no cache — file is append-only, reading whole file is cheap).
     let sessionStats = null;
@@ -331,6 +352,9 @@ process.stdin.on('end', () => {
       else ctxColorCode = '5;31';                  // blinking red
     }
 
+    const blockLimit = formatRateLimit(data.rate_limits?.five_hour, '\u25F1');
+    const weeklyLimit = formatRateLimit(data.rate_limits?.seven_day, '\u25D1');
+
     // Build segment list — only include segments with real data.
     // Shape: { text, codes, caption, sepBefore }
     const segs = [];
@@ -344,6 +368,8 @@ process.stdin.on('end', () => {
     if (todosPending > 0) segs.push({ text: `[${todosPending} TODO]`, codes: '95', caption: 'todos', sepBefore: null });
     if (task) segs.push({ text: task, codes: '1;95', caption: 'current task', sepBefore: ' \u2192 ' });
     if (ctxText) segs.push({ text: ctxText, codes: ctxColorCode, caption: 'Context', sepBefore: null, align: 'left' });
+    if (blockLimit) segs.push({ text: blockLimit.text, codes: blockLimit.codes, caption: '5h', sepBefore: null, align: 'left' });
+    if (weeklyLimit) segs.push({ text: weeklyLimit.text, codes: weeklyLimit.codes, caption: 'week', sepBefore: null, align: 'left' });
 
     // Usage segments. Only session tokens enabled — cost/cache/today/msgs left
     // commented so you can flip them back on per taste. Captions stay short so
