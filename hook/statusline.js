@@ -275,11 +275,21 @@ process.stdin.on('end', () => {
     const homeDir = os.homedir();
     const homeResolved = path.resolve(homeDir);
     const claudeDir = process.env.CLAUDE_CONFIG_DIR || path.join(homeDir, '.claude');
+    const snapshot = loadPresetSnapshot(claudeDir);
+    const requestedIds = new Set();
+    if (snapshot?.enabled) {
+      for (const id of snapshot.enabled) {
+        requestedIds.add(id);
+        if (presetCommon?.resolveSegmentId) requestedIds.add(presetCommon.resolveSegmentId(id));
+      }
+    }
+    const needsFullRuntime = !snapshot;
+    const wants = (...ids) => needsFullRuntime || ids.some(id => requestedIds.has(id));
 
     let task = '';
     let todosPending = 0;
     const todosDir = path.join(claudeDir, 'todos');
-    if (session && fs.existsSync(todosDir)) {
+    if (wants('task', 'todos') && session && fs.existsSync(todosDir)) {
       try {
         const files = fs.readdirSync(todosDir)
           .filter(file => file.startsWith(session) && file.includes('-agent-') && file.endsWith('.json'))
@@ -296,28 +306,32 @@ process.stdin.on('end', () => {
       }
     }
 
-    const cavemanActive = fs.existsSync(path.join(homeDir, '.claude', '.caveman-active'));
+    const cavemanActive = wants('caveman')
+      ? fs.existsSync(path.join(homeDir, '.claude', '.caveman-active'))
+      : false;
 
     let foundRoot = null;
-    try {
-      let current = path.resolve(dir);
-      for (let i = 0; i < 12; i++) {
-        if (fs.existsSync(path.join(current, '.git'))) {
-          foundRoot = current;
-          break;
+    if (wants('enforcer', 'enforcerprog', 'repo', 'branch', 'commitage', 'aheadbehind', 'dirty', 'untracked')) {
+      try {
+        let current = path.resolve(dir);
+        for (let i = 0; i < 12; i++) {
+          if (fs.existsSync(path.join(current, '.git'))) {
+            foundRoot = current;
+            break;
+          }
+          if (current === homeResolved) break;
+          const parent = path.dirname(current);
+          if (parent === current) break;
+          current = parent;
         }
-        if (current === homeResolved) break;
-        const parent = path.dirname(current);
-        if (parent === current) break;
-        current = parent;
+        if (foundRoot === homeResolved) foundRoot = null;
+      } catch (error) {
+        // Ignore.
       }
-      if (foundRoot === homeResolved) foundRoot = null;
-    } catch (error) {
-      // Ignore.
     }
 
     let enforcerProgress = '';
-    if (foundRoot) {
+    if (wants('enforcer', 'enforcerprog') && foundRoot) {
       try {
         const ledgerPath = path.join(foundRoot, '.plan-enforcer', 'ledger.md');
         if (fs.existsSync(ledgerPath)) {
@@ -340,7 +354,7 @@ process.stdin.on('end', () => {
       }
     }
 
-    if (!enforcerProgress) {
+    if (wants('enforcer', 'enforcerprog') && !enforcerProgress) {
       try {
         const previewFlag = path.join(homeDir, '.claude', '.enforcer-preview');
         if (fs.existsSync(previewFlag)) {
@@ -352,16 +366,57 @@ process.stdin.on('end', () => {
       }
     }
 
+    const gitCachePath = path.join(os.tmpdir(), 'claude-statusline-git-cache.json');
+    let gitCache = null;
+
+    function loadGitCache() {
+      if (gitCache) return gitCache;
+      try {
+        const parsed = JSON.parse(fs.readFileSync(gitCachePath, 'utf8'));
+        gitCache = parsed && typeof parsed === 'object' ? parsed : {};
+      } catch (error) {
+        gitCache = {};
+      }
+      return gitCache;
+    }
+
+    function writeGitCache(store) {
+      try {
+        fs.writeFileSync(gitCachePath, JSON.stringify(store));
+      } catch (error) {
+        // Ignore cache write errors.
+      }
+    }
+
+    function gitCacheTtlMs(args) {
+      if (args.includes('status --porcelain')) return 1500;
+      if (args.includes('rev-list --left-right --count')) return 3000;
+      return 5000;
+    }
+
     function tryGit(args, cwd) {
+      const key = `${cwd}::${args}`;
+      const ttlMs = gitCacheTtlMs(args);
+      const now = Date.now();
+      const store = loadGitCache();
+      const cached = store[key];
+      if (cached && cached.fetchedAt && (now - cached.fetchedAt) < ttlMs) {
+        return cached.value || '';
+      }
       try {
         const { execSync } = require('child_process');
-        return execSync('git ' + args, {
+        const value = execSync('git ' + args, {
           cwd,
           stdio: ['ignore', 'pipe', 'ignore'],
           timeout: 400,
           windowsHide: true,
         }).toString().trim();
+        store[key] = { fetchedAt: now, value };
+        writeGitCache(store);
+        return value;
       } catch (error) {
+        store[key] = { fetchedAt: now, value: '' };
+        writeGitCache(store);
         return '';
       }
     }
@@ -377,7 +432,7 @@ process.stdin.on('end', () => {
 
     let branch = '';
     let commitAge = '';
-    if (foundRoot) {
+    if (foundRoot && wants('branch', 'commitage')) {
       branch = tryGit('rev-parse --abbrev-ref HEAD', foundRoot);
       if (branch === 'HEAD') branch = tryGit('rev-parse --short HEAD', foundRoot);
       const commitTs = tryGit('log -1 --format=%ct', foundRoot);
@@ -497,14 +552,14 @@ process.stdin.on('end', () => {
     }
 
     let sessionStats = null;
-    if (session) {
+    if (wants('cost', 'tokens', 'sessTokens', 'sessCost', 'cacheHit', 'session') && session) {
       const projectDir = path.join(claudeDir, 'projects', sanitizeCwd(dir));
       const sessionFile = path.join(projectDir, session + '.jsonl');
       if (fs.existsSync(sessionFile)) sessionStats = readJsonlStats(sessionFile, 0);
     }
 
     let aggStats = { todayCost: 0, msgs5h: 0 };
-    try {
+    if (wants('todayCost', 'msgs5h')) try {
       const cachePath = path.join(os.tmpdir(), 'claude-statusline-agg.json');
       const now = Date.now();
       let cached = null;
@@ -578,22 +633,28 @@ process.stdin.on('end', () => {
     let dirty = '';
     let untracked = '';
     if (foundRoot) {
-      const counts = tryGit('rev-list --left-right --count HEAD...@{upstream}', foundRoot);
-      if (counts) {
-        const parts = counts.split(/\s+/).map(part => parseInt(part, 10)).filter(Number.isFinite);
-        if (parts.length >= 2) {
-          const pieces = [];
-          if (parts[0] > 0) pieces.push(`\u2191${parts[0]}`);
-          if (parts[1] > 0) pieces.push(`\u2193${parts[1]}`);
-          aheadBehind = pieces.join(' ');
+      if (wants('aheadbehind')) {
+        const counts = tryGit('rev-list --left-right --count HEAD...@{upstream}', foundRoot);
+        if (counts) {
+          const parts = counts.split(/\s+/).map(part => parseInt(part, 10)).filter(Number.isFinite);
+          if (parts.length >= 2) {
+            const pieces = [];
+            if (parts[0] > 0) pieces.push(`\u2191${parts[0]}`);
+            if (parts[1] > 0) pieces.push(`\u2193${parts[1]}`);
+            aheadBehind = pieces.join(' ');
+          }
         }
       }
-      const dirtyOut = tryGit('status --porcelain --untracked-files=no', foundRoot);
-      if (dirtyOut) dirty = '\u25cf';
-      const untrackedLines = tryGit('status --porcelain --untracked-files=all', foundRoot)
-        .split('\n')
-        .filter(line => line.startsWith('??'));
-      if (untrackedLines.length) untracked = `?${untrackedLines.length}`;
+      if (wants('dirty')) {
+        const dirtyOut = tryGit('status --porcelain --untracked-files=no', foundRoot);
+        if (dirtyOut) dirty = '\u25cf';
+      }
+      if (wants('untracked')) {
+        const untrackedLines = tryGit('status --porcelain --untracked-files=all', foundRoot)
+          .split('\n')
+          .filter(line => line.startsWith('??'));
+        if (untrackedLines.length) untracked = `?${untrackedLines.length}`;
+      }
     }
 
     const cacheInputTotal = sessionStats ? sessionStats.cacheRead + sessionStats.input + sessionStats.cacheWrite : 0;
@@ -601,12 +662,18 @@ process.stdin.on('end', () => {
       ? `${Math.round((sessionStats.cacheRead / cacheInputTotal) * 100)}% cached`
       : '';
 
-    const clockText = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
-    const dateText = new Intl.DateTimeFormat('en-US', { weekday: 'short', month: 'short', day: 'numeric' }).format(new Date());
+    const clockText = wants('clock')
+      ? new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
+      : '';
+    const dateText = wants('date')
+      ? new Intl.DateTimeFormat('en-US', { weekday: 'short', month: 'short', day: 'numeric' }).format(new Date())
+      : '';
     const sessionDurationText = sessionStats?.firstTs
       ? formatDuration(Date.now() - sessionStats.firstTs)
       : '';
-    const nodeText = `node ${process.versions.node.split('.').slice(0, 2).join('.')}`;
+    const nodeText = wants('node')
+      ? `node ${process.versions.node.split('.').slice(0, 2).join('.')}`
+      : '';
 
     const runtimeMap = {
       caveman: { show: cavemanActive, text: '[CAVEMAN]' },
@@ -638,7 +705,6 @@ process.stdin.on('end', () => {
       msgs5h: { show: aggStats.msgs5h > 0, text: `${aggStats.msgs5h} msgs/5h`, align: 'left' },
     };
 
-    const snapshot = loadPresetSnapshot(claudeDir);
     const configuredOutput = renderConfiguredStatusline(snapshot, runtimeMap);
     if (configuredOutput) {
       process.stdout.write(configuredOutput);

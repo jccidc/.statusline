@@ -108,6 +108,19 @@ function listBuiltInPresetRecords() {
   return common.listBuiltInPresetRecords().sort((a, b) => a.label.localeCompare(b.label));
 }
 
+function resolveActivePresetName(options = {}) {
+  const rewriteMissing = !!options.rewriteMissing;
+  const raw = readActivePresetName() || common.DEFAULT_ACTIVE_PRESET;
+  const record = findPresetRecord(raw);
+  if (record) return { raw, resolved: record.key, missing: false };
+
+  const resolved = common.DEFAULT_ACTIVE_PRESET;
+  if (rewriteMissing && raw !== resolved) {
+    try { writeActivePresetName(resolved); } catch (error) { /* ignore */ }
+  }
+  return { raw, resolved, missing: raw !== resolved };
+}
+
 function findPresetRecord(name) {
   const needle = String(name || '').trim().toLowerCase();
   if (!needle) return null;
@@ -142,11 +155,13 @@ function formatRecordLine(record, activeName, index) {
 }
 
 function renderSavedList() {
-  const activeName = readActivePresetName() || common.DEFAULT_ACTIVE_PRESET;
+  const active = resolveActivePresetName({ rewriteMissing: true });
+  const activeName = active.resolved;
   const imported = listImportedPresetRecords();
   const lines = [];
 
   lines.push(`Active preset: ${activeName}`);
+  if (active.missing) lines.push(`Missing preset reset: ${active.raw} -> ${activeName}`);
   lines.push('');
   lines.push('Saved presets:');
   if (imported.length) {
@@ -159,10 +174,10 @@ function renderSavedList() {
 
   lines.push('');
   lines.push('Use:');
-  lines.push('/statusline-preset <name>');
-  if (imported.length) lines.push('/statusline-preset <number>');
+  if (imported.length) lines.push('/statusline-preset 1');
+  lines.push('/statusline-preset NAME');
   lines.push('/statusline-preset all');
-  lines.push('/statusline-preset import <payload>');
+  lines.push('/statusline-preset import PAYLOAD');
   lines.push('');
   lines.push('[current] = active preset');
 
@@ -170,12 +185,14 @@ function renderSavedList() {
 }
 
 function renderAllList() {
-  const activeName = readActivePresetName() || common.DEFAULT_ACTIVE_PRESET;
+  const active = resolveActivePresetName({ rewriteMissing: true });
+  const activeName = active.resolved;
   const builtIn = listBuiltInPresetRecords();
   const imported = listImportedPresetRecords();
   const lines = [];
 
   lines.push(`Active preset: ${activeName}`);
+  if (active.missing) lines.push(`Missing preset reset: ${active.raw} -> ${activeName}`);
   lines.push('');
   lines.push('Saved presets:');
   if (imported.length) {
@@ -192,9 +209,9 @@ function renderAllList() {
 
   lines.push('');
   lines.push('Use:');
-  lines.push('/statusline-preset <name>');
-  if (imported.length) lines.push('/statusline-preset <number>');
-  lines.push('/statusline-preset import <payload>');
+  if (imported.length) lines.push('/statusline-preset 1');
+  lines.push('/statusline-preset NAME');
+  lines.push('/statusline-preset import PAYLOAD');
   lines.push('');
   lines.push('[current] = active preset');
 
@@ -226,7 +243,8 @@ function applyPreset(name) {
     `Label: ${record.label}`,
   ];
   if (unsupported.length) lines.push(`Skipped by hook: ${unsupported.join(', ')}`);
-  lines.push('Next Claude statusline refresh will use it.');
+  lines.push('Claude uses it on the next statusline redraw.');
+  lines.push('If the bar does not change immediately, send one more prompt.');
   return { ok: true, text: lines.join('\n') };
 }
 
