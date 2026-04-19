@@ -27,9 +27,9 @@ Most people do not need to hand-edit the hook. The normal flow is:
 5. After that, just run:
 
    ```bash
-   /statusline-preset       # list your saved presets
+   /statusline-preset       # show numbered saved presets
+   /statusline-preset 2     # load preset #2
    /statusline-preset all   # show built-ins too
-   /statusline-preset NAME  # switch to a preset by name
    ```
 
 Important:
@@ -114,7 +114,8 @@ On Windows + Git Bash, use the forward-slash path:
 Start a new Claude Code session. You now have:
 
 ```bash
-/statusline-preset                 # list saved presets
+/statusline-preset                 # show numbered saved presets
+/statusline-preset 2               # activate preset #2 from that list
 /statusline-preset all             # show saved + built-in presets
 /statusline-preset NAME            # activate a preset by name
 /statusline-preset import PAYLOAD  # import + activate a playground preset
@@ -188,9 +189,9 @@ xdg-open ~/.statusline/playground/index.html
   setup.
 - Hit **💾 Save** to stash a custom preset in browser `localStorage`. If Claude
   is linked, the same save also syncs into `~/.claude/statusline-presets.json`.
-- Use `/statusline-preset` to list your saved presets, `/statusline-preset all`
-  to show built-ins too, or `/statusline-preset NAME` to switch instantly
-  inside Claude Code.
+- Use `/statusline-preset` to show numbered saved presets, then
+  `/statusline-preset 1` or `/statusline-preset 2` to switch instantly inside
+  Claude Code. Use `/statusline-preset all` only if you want built-ins too.
 - Hit **Import** only if you want the fallback `/statusline-preset import ...`
   command instead of direct Claude syncing.
 - Hit **Copy** only if you explicitly want a natural-language prompt that asks
@@ -206,11 +207,11 @@ Seven paths, ranked by recipient friction:
 1. **URL share** — playground → 🔗 Share → send the URL. Recipient has the
    playground HTML → pastes URL → loads your setup verbatim.
 2. **Linked save** — playground → **Link Claude** once → later **Save**.
-   Claude can then list and switch those presets directly with
-   `/statusline-preset NAME`.
+   Claude can then list them as numbers with `/statusline-preset`, and you can
+   switch by typing `/statusline-preset 1`, `/statusline-preset 2`, etc.
 3. **Import command** — playground → **Import** → send them the
    `/statusline-preset import ...` command. They paste once, then use
-   `/statusline-preset NAME` after that.
+   `/statusline-preset 1` or a preset name after that.
 4. **Send playground HTML + URL** — email/Slack them `playground/index.html`
    plus the share URL. Fully offline.
 5. **Copy the prompt** — playground → switch output to "Prompt" → Copy → paste
