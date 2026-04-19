@@ -360,6 +360,99 @@
     z-index: 99;
   }
   .toast.show { opacity: 1; }
+  .modal-backdrop[hidden] { display: none; }
+  .modal-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(9, 12, 16, 0.72);
+    display: grid;
+    place-items: center;
+    z-index: 120;
+    padding: 16px;
+  }
+  .modal-card {
+    width: min(560px, calc(100vw - 32px));
+    max-height: min(78vh, 720px);
+    overflow: hidden;
+    display: grid;
+    grid-template-rows: auto auto 1fr;
+    gap: 10px;
+    background: var(--panel);
+    border: 1px solid #2f3744;
+    border-radius: 10px;
+    box-shadow: 0 18px 48px rgba(0,0,0,0.4);
+    padding: 14px;
+  }
+  .modal-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+  }
+  .modal-head h3 { margin: 0; font-size: 14px; }
+  .modal-card input[type=text] {
+    width: 100%;
+    padding: 9px 11px;
+    border-radius: 8px;
+    border: 1px solid #384255;
+    background: #0f141b;
+    color: var(--text);
+    outline: none;
+  }
+  .modal-card input[type=text]:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 1px var(--accent);
+  }
+  .preset-picker-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    overflow: auto;
+    padding-right: 2px;
+  }
+  .preset-option {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 9px 11px;
+    border-radius: 8px;
+    border: 1px solid #2f3744;
+    background: #0f141b;
+    color: var(--text);
+    cursor: pointer;
+    text-align: left;
+  }
+  .preset-option:hover,
+  .preset-option.active {
+    border-color: var(--accent);
+    background: #162030;
+  }
+  .preset-option-main {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+  }
+  .preset-option-title {
+    font-size: 12px;
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .preset-option-sub { color: var(--muted); font-size: 10px; }
+  .preset-chip {
+    flex: none;
+    font-size: 10px;
+    color: var(--muted);
+    border: 1px solid #364050;
+    border-radius: 999px;
+    padding: 2px 7px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
 </style>
 </head>
 <body>
@@ -367,10 +460,12 @@
 <header class="topbar">
   <h1>Statusline Playground</h1>
   <div class="topbar-actions">
+    <button class="mini-btn" id="load-preset-btn" title="Load preset (L)">Load</button>
     <button class="mini-btn" id="undo-btn" title="Undo (Ctrl+Z)">Undo</button>
     <button class="mini-btn" id="redo-btn" title="Redo (Ctrl+Y)">Redo</button>
     <button class="mini-btn" id="randomize-btn" title="Randomize">🎲 Randomize</button>
     <button class="mini-btn" id="save-preset-btn" title="Save current as custom preset">💾 Save</button>
+    <button class="mini-btn" id="copy-claude-btn" title="Copy /statusline-preset import command">Claude</button>
     <button class="mini-btn" id="share-btn" title="Copy URL with state">🔗 Share</button>
     <button class="mini-btn" id="reset-btn" title="Reset to defaults">↺ Reset</button>
   </div>
@@ -487,12 +582,13 @@
     <details>
       <summary>My saved presets</summary>
       <div id="saved-preset-list" style="margin-top:8px;"></div>
-      <div class="hint">Saved to this browser's localStorage. Use 💾 Save above to add one.</div>
+      <div class="hint">Saved in this browser. Use Claude to copy a `/statusline-preset import ...` command for Claude Code.</div>
     </details>
 
     <details>
       <summary>Keyboard shortcuts</summary>
       <div style="font-size:10px;line-height:1.9;margin-top:6px;color:var(--muted);">
+        <div><span class="kbd">L</span> - load preset picker</div>
         <div><span class="kbd">Ctrl+Z</span> / <span class="kbd">Ctrl+Y</span> — undo / redo</div>
         <div><span class="kbd">R</span> — randomize</div>
         <div><span class="kbd">C</span> — copy prompt</div>
@@ -554,6 +650,20 @@
       <pre id="json-out" style="display:none;"></pre>
     </div>
   </main>
+</div>
+
+<div class="modal-backdrop" id="preset-modal" hidden>
+  <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="preset-modal-title">
+    <div class="modal-head">
+      <div>
+        <h3 id="preset-modal-title">Load preset</h3>
+        <div class="hint">Built-in + saved presets. Type to filter, press <span class="kbd">Enter</span> to load top match.</div>
+      </div>
+      <button class="mini-btn" id="preset-close-btn" title="Close">Close</button>
+    </div>
+    <input type="text" id="preset-search" placeholder="Search preset name…">
+    <div class="preset-picker-list" id="preset-picker-list"></div>
+  </div>
 </div>
 
 <div class="toast" id="toast"></div>
@@ -652,7 +762,7 @@ const ALL_SEGMENTS = [
   { id: 'gcloud',         label: 'gcloud account',   text: 'gcp:main',               color: 'brightBlue' },
   { id: 'context',        label: 'Context bar',      text: '█░░░░░░░░░ 12%',         color: 'green' },
   { id: 'tokens',         label: 'Tokens saved',     text: '~45k saved',             color: 'brightCyan' },
-  { id: 'block',          label: '5h quota',         text: '\u25F1 23% (4h 12m)',    color: 'brightCyan' },
+  { id: 'block',          label: '5h quota',         text: '\u25D4 23% (4h 12m)',    color: 'brightCyan' },
   { id: 'weekly',         label: 'Weekly quota',     text: '\u25D1 41% (3d 5h)',     color: 'brightBlue' },
   { id: 'sessTokens',     label: 'Session tokens',   text: '45.3k',                  color: 'brightCyan' },
   { id: 'sessCost',       label: 'Session cost',     text: '$2.14',                  color: 'brightGreen' },
@@ -835,6 +945,7 @@ function stateSerialize() {
     sepColor: state.sepColor,
     sepBold: state.sepBold,
     sepDim: state.sepDim,
+    showCaptions: state.showCaptions,
     segments: state.segments,
     order: state.order,
     enabled: state.enabled,
@@ -897,11 +1008,17 @@ const el = {
   undoBtn:        document.getElementById('undo-btn'),
   redoBtn:        document.getElementById('redo-btn'),
   randomizeBtn:   document.getElementById('randomize-btn'),
+  loadPresetBtn:  document.getElementById('load-preset-btn'),
   savePresetBtn:  document.getElementById('save-preset-btn'),
+  copyClaudeBtn:  document.getElementById('copy-claude-btn'),
   shareBtn:       document.getElementById('share-btn'),
   resetBtn:       document.getElementById('reset-btn'),
   addCustomBtn:   document.getElementById('add-custom-btn'),
   savedPresetList:document.getElementById('saved-preset-list'),
+  presetModal:    document.getElementById('preset-modal'),
+  presetSearch:   document.getElementById('preset-search'),
+  presetPickerList: document.getElementById('preset-picker-list'),
+  presetCloseBtn: document.getElementById('preset-close-btn'),
   viewToggle:     document.getElementById('view-toggle'),
   toast:          document.getElementById('toast'),
 };
@@ -921,7 +1038,8 @@ function isCustomSeg(id) { return id.startsWith('custom_'); }
  * Preset apply
  * ============================================================ */
 function applyPreset(name, fromHistory) {
-  const p = PRESETS[name] || loadSavedPresets()[name];
+  const saved = loadSavedPresets()[name];
+  const p = PRESETS[name] || (saved?.snapshot ? saved.snapshot : saved);
   if (!p) return;
   if (!fromHistory) pushHistory();
   state.activePreset = name;
@@ -936,10 +1054,15 @@ function applyPreset(name, fromHistory) {
     if (!state.order.includes(seg.id)) state.order.push(seg.id);
   }
   state.enabled = p.enabled.slice();
-  state.separator = p.separator;
-  state.customSeparator = '';
+  state.separator = p.separator || ' | ';
+  state.customSeparator = p.customSeparator || '';
+  state.sepColor = p.sepColor || 'gray';
+  state.sepBold = !!p.sepBold;
+  state.sepDim = !!p.sepDim;
+  state.showCaptions = p.showCaptions !== false;
   el.separatorSelect.value = [...el.separatorSelect.options].map(o => o.value).includes(p.separator) ? p.separator : 'custom';
   el.customSepRow.style.display = el.separatorSelect.value === 'custom' ? 'flex' : 'none';
+  el.customSep.value = state.customSeparator;
   renderAll();
 }
 
@@ -1061,12 +1184,18 @@ function renderSavedPresets() {
     btn.style.flex = '1';
     btn.textContent = saved[key].label || key;
     btn.onclick = () => applyPreset(key);
+    const claude = document.createElement('button');
+    claude.className = 'mini-btn';
+    claude.textContent = 'Claude';
+    claude.title = 'Copy /statusline-preset import command';
+    claude.onclick = () => { copyClaudeImportCommand(key); };
     const del = document.createElement('button');
     del.className = 'mini-btn';
     del.textContent = '×';
     del.title = 'Delete';
     del.onclick = () => { deleteSavedPreset(key); renderAll(); };
     row.appendChild(btn);
+    row.appendChild(claude);
     row.appendChild(del);
     el.savedPresetList.appendChild(row);
   });
@@ -1093,7 +1222,7 @@ function renderCustomSegList() {
     inp.type = 'text';
     inp.value = seg.text;
     inp.placeholder = 'Custom text…';
-    inp.oninput = () => { seg.text = inp.value; renderAll(); };
+    inp.oninput = () => { seg.text = inp.value; renderLiveOutput(); };
     const right = document.createElement('div');
     right.style.display = 'flex';
     right.style.gap = '3px';
@@ -1304,7 +1433,7 @@ function buildExpandedRow(seg) {
   mwInp.min = 0;
   mwInp.max = 60;
   mwInp.value = seg.maxWidth || 0;
-  mwInp.oninput = () => { seg.maxWidth = parseInt(mwInp.value, 10) || 0; renderAll(); };
+  mwInp.oninput = () => { seg.maxWidth = parseInt(mwInp.value, 10) || 0; renderLiveOutput(); };
   g.appendChild(mkLabel('Max width'));
   g.appendChild(mwInp);
 
@@ -1373,7 +1502,7 @@ function buildExpandedRow(seg) {
   };
   customSepInp.oninput = () => {
     seg.sepBefore = customSepInp.value;
-    renderAll();
+    renderLiveOutput();
   };
   sepWrap.appendChild(sepSel);
   sepWrap.appendChild(customSepInp);
@@ -1385,7 +1514,7 @@ function buildExpandedRow(seg) {
   capInp.type = 'text';
   capInp.value = seg.caption || '';
   capInp.placeholder = '(none)';
-  capInp.oninput = () => { seg.caption = capInp.value; renderAll(); };
+  capInp.oninput = () => { seg.caption = capInp.value; renderLiveOutput(); };
   g.appendChild(mkLabel('Caption'));
   g.appendChild(capInp);
 
@@ -1393,7 +1522,7 @@ function buildExpandedRow(seg) {
   const toInp = document.createElement('input');
   toInp.type = 'text';
   toInp.value = seg.text;
-  toInp.oninput = () => { seg.text = toInp.value; renderAll(); };
+  toInp.oninput = () => { seg.text = toInp.value; renderLiveOutput(); };
   g.appendChild(mkLabel('Text'));
   g.appendChild(toInp);
 
@@ -1684,12 +1813,17 @@ function loadSavedPresets() {
 function writeSavedPresets(obj) {
   try { localStorage.setItem(LS_KEY, JSON.stringify(obj)); } catch (e) {}
 }
-function saveCurrentAsPreset() {
-  const name = prompt('Name this preset:');
-  if (!name) return;
-  const key = 'saved:' + name.toLowerCase().replace(/\s+/g, '-');
-  const saved = loadSavedPresets();
-  // Snapshot: enabled ids, separator, per-segment overrides (non-default fields)
+function slugifyPresetName(name) {
+  return 'saved:' + String(name || 'preset')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .replace(/-{2,}/g, '-');
+}
+function buildSnapshotFromState() {
+  const enabledSet = new Set(state.enabled);
+  const enabled = state.order.filter(id => enabledSet.has(id) && !isCustomSeg(id));
   const overrides = {};
   for (const seg of state.segments) {
     const base = BASE_SEGMENTS.find(s => s.id === seg.id);
@@ -1700,11 +1834,62 @@ function saveCurrentAsPreset() {
     }
     if (Object.keys(ov).length) overrides[seg.id] = ov;
   }
+  return {
+    enabled,
+    separator: currentSeparator(),
+    customSeparator: el.separatorSelect.value === 'custom' ? (el.customSep.value || ' | ') : '',
+    sepColor: state.sepColor,
+    sepBold: state.sepBold,
+    sepDim: state.sepDim,
+    showCaptions: state.showCaptions,
+    overrides,
+  };
+}
+function buildClaudeImportPayload(name, snapshot) {
+  const json = JSON.stringify({
+    key: slugifyPresetName(name),
+    label: name,
+    snapshot,
+  });
+  return btoa(unescape(encodeURIComponent(json)))
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/g, '');
+}
+function buildClaudeImportCommand(name, snapshot) {
+  return `/statusline-preset import ${buildClaudeImportPayload(name, snapshot)}`;
+}
+async function copyClaudeImportCommand(savedKey) {
+  let name = '';
+  let snapshot = null;
+  if (savedKey) {
+    const saved = loadSavedPresets()[savedKey];
+    if (!saved) return;
+    name = saved.label || savedKey;
+    snapshot = saved.snapshot || saved;
+  } else {
+    const suggested = state.activePreset.startsWith('saved:')
+      ? state.activePreset.replace(/^saved:/, '').replace(/-/g, ' ')
+      : (PRESETS[state.activePreset]?.label || 'My preset');
+    name = prompt('Claude preset name:', suggested);
+    if (!name) return;
+    snapshot = buildSnapshotFromState();
+  }
+  try {
+    await navigator.clipboard.writeText(buildClaudeImportCommand(name, snapshot));
+    toast(`Copied Claude import for "${name}"`);
+  } catch (e) {
+    toast('Clipboard copy failed');
+  }
+}
+function saveCurrentAsPreset() {
+  const name = prompt('Name this preset:');
+  if (!name) return;
+  const key = slugifyPresetName(name);
+  const saved = loadSavedPresets();
   saved[key] = {
     label: name,
-    enabled: state.enabled.slice(),
-    separator: currentSeparator(),
-    overrides,
+    snapshot: buildSnapshotFromState(),
   };
   writeSavedPresets(saved);
   toast(`Saved "${name}"`);
@@ -1715,6 +1900,74 @@ function deleteSavedPreset(key) {
   delete saved[key];
   writeSavedPresets(saved);
   toast('Deleted');
+}
+
+function getPresetEntries() {
+  const builtIn = Object.entries(PRESETS).map(([key, preset]) => ({
+    key,
+    label: preset.label || key,
+    source: 'built-in',
+  }));
+  const saved = Object.entries(loadSavedPresets()).map(([key, preset]) => ({
+    key,
+    label: preset.label || key,
+    source: 'saved',
+  }));
+  return builtIn.concat(saved).sort((a, b) => a.label.localeCompare(b.label));
+}
+
+function renderPresetPicker(filter = '') {
+  const needle = String(filter || '').trim().toLowerCase();
+  const entries = getPresetEntries().filter(entry =>
+    !needle ||
+    entry.label.toLowerCase().includes(needle) ||
+    entry.key.toLowerCase().includes(needle)
+  );
+  el.presetPickerList.innerHTML = '';
+  if (!entries.length) {
+    const empty = document.createElement('div');
+    empty.className = 'hint';
+    empty.textContent = 'No matching presets.';
+    el.presetPickerList.appendChild(empty);
+    return;
+  }
+  entries.forEach((entry, idx) => {
+    const btn = document.createElement('button');
+    btn.className = 'preset-option' + (idx === 0 ? ' active' : '');
+    btn.type = 'button';
+    const main = document.createElement('div');
+    main.className = 'preset-option-main';
+    const title = document.createElement('div');
+    title.className = 'preset-option-title';
+    title.textContent = entry.label;
+    const sub = document.createElement('div');
+    sub.className = 'preset-option-sub';
+    sub.textContent = entry.key;
+    main.appendChild(title);
+    main.appendChild(sub);
+    const chip = document.createElement('span');
+    chip.className = 'preset-chip';
+    chip.textContent = entry.source;
+    btn.appendChild(main);
+    btn.appendChild(chip);
+    btn.onclick = () => {
+      applyPreset(entry.key);
+      closePresetPicker();
+      toast(`Loaded "${entry.label}"`);
+    };
+    el.presetPickerList.appendChild(btn);
+  });
+}
+
+function openPresetPicker() {
+  renderPresetPicker('');
+  el.presetSearch.value = '';
+  el.presetModal.hidden = false;
+  requestAnimationFrame(() => el.presetSearch.focus());
+}
+
+function closePresetPicker() {
+  el.presetModal.hidden = true;
 }
 
 /* ============================================================
@@ -1830,9 +2083,19 @@ function renderAll() {
   renderSavedPresets();
   renderSegmentList();
   renderCustomSegList();
+  el.customSep.value = state.customSeparator || '';
+  el.showCaptions.checked = !!state.showCaptions;
+  el.themeSelect.value = state.theme;
+  el.fontSelect.value = state.font;
+  el.zoomSelect.value = String(state.zoom);
   populateSepColor();
   el.sepBold.classList.toggle('active', state.sepBold);
   el.sepDim.classList.toggle('active', state.sepDim);
+  renderPreview();
+  renderPromptOutput();
+}
+
+function renderLiveOutput() {
   renderPreview();
   renderPromptOutput();
 }
@@ -1849,7 +2112,7 @@ el.separatorSelect.onchange = () => {
 el.customSep.oninput = () => {
   state.customSeparator = el.customSep.value;
   state.separator = el.customSep.value;
-  renderAll();
+  renderLiveOutput();
 };
 el.sepColor.onchange = () => { pushHistory(); state.sepColor = el.sepColor.value; renderAll(); };
 el.sepBold.onclick = () => { pushHistory(); state.sepBold = !state.sepBold; renderAll(); };
@@ -1880,7 +2143,9 @@ el.statePills.forEach(p => {
 el.undoBtn.onclick = undo;
 el.redoBtn.onclick = redo;
 el.randomizeBtn.onclick = randomize;
+el.loadPresetBtn.onclick = openPresetPicker;
 el.savePresetBtn.onclick = saveCurrentAsPreset;
+el.copyClaudeBtn.onclick = () => { copyClaudeImportCommand(); };
 el.shareBtn.onclick = shareUrl;
 el.resetBtn.onclick = () => {
   if (!confirm('Reset playground to defaults? Saved presets are kept.')) return;
@@ -1900,6 +2165,11 @@ el.addCustomBtn.onclick = () => {
   state.enabled.push(id);
   renderAll();
 };
+el.presetCloseBtn.onclick = closePresetPicker;
+el.presetModal.onclick = ev => {
+  if (ev.target === el.presetModal) closePresetPicker();
+};
+el.presetSearch.oninput = () => renderPresetPicker(el.presetSearch.value);
 
 // View toggle
 el.viewToggle.querySelectorAll('.mini-btn').forEach(b => {
@@ -1931,12 +2201,28 @@ el.copyBtn.onclick = async () => {
 
 /* Keyboard shortcuts */
 document.addEventListener('keydown', ev => {
+  if (!el.presetModal.hidden) {
+    if (ev.key === 'Escape') {
+      ev.preventDefault();
+      closePresetPicker();
+      return;
+    }
+    if (ev.key === 'Enter' && document.activeElement === el.presetSearch) {
+      const first = el.presetPickerList.querySelector('.preset-option');
+      if (first) {
+        ev.preventDefault();
+        first.click();
+      }
+      return;
+    }
+  }
   if (ev.target.matches('input,select,textarea')) return;
   if (ev.ctrlKey || ev.metaKey) {
     if (ev.key === 'z') { ev.preventDefault(); undo(); return; }
     if (ev.key === 'y' || (ev.shiftKey && ev.key === 'Z')) { ev.preventDefault(); redo(); return; }
   }
-  if (ev.key === 'r' || ev.key === 'R') { ev.preventDefault(); randomize(); }
+  if (ev.key === 'l' || ev.key === 'L') { ev.preventDefault(); openPresetPicker(); }
+  else if (ev.key === 'r' || ev.key === 'R') { ev.preventDefault(); randomize(); }
   else if (ev.key === 'c' || ev.key === 'C') { ev.preventDefault(); el.copyBtn.click(); }
   else if (ev.key === 's' || ev.key === 'S') { ev.preventDefault(); saveCurrentAsPreset(); }
   else if (/^[1-9]$/.test(ev.key)) {

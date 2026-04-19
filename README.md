@@ -27,7 +27,8 @@ design your own and share it with teammates.
   transform (UPPER / lower / Title), caption, custom separator-before,
   alignment (center / left / right), max width with middle-ellipsis truncation.
 - **Playground.** A single HTML file with live preview, 8+ presets, 9 terminal
-  themes, undo/redo, URL-sharing, localStorage presets, and a "copy prompt"
+  themes, undo/redo, URL-sharing, localStorage presets, a `Claude` export
+  button that copies `/statusline-preset import ...`, and a "copy prompt"
   button that emits a natural-language instruction for Claude Code to rewrite
   your hook.
 
@@ -92,6 +93,13 @@ Real ledgers always win over the preview flag.
 
 Fire up a new session. Your statusline is now two-line and live.
 
+You also get:
+
+```bash
+/statusline-preset        # list built-in + imported presets
+/statusline-preset NAME   # activate a preset by name
+```
+
 ## Design your own
 
 Open the playground in any browser:
@@ -116,6 +124,9 @@ xdg-open ~/.statusline/playground/index.html
   to anyone who has the playground HTML and their playground loads your exact
   setup.
 - Hit **💾 Save** to stash a custom preset in `localStorage`.
+- Hit **Claude** to copy a `/statusline-preset import ...` command for the
+  current layout, then paste that command into Claude Code once to register
+  the preset under `~/.claude`.
 
 See [`docs/STATUSLINE.md`](docs/STATUSLINE.md) for an architectural deep-dive on
 how the bar is built and how to add your own segments.
@@ -166,6 +177,10 @@ data simply skips (no empty slot, no dangling separator):
 | File                                  | Purpose                                  |
 | ------------------------------------- | ---------------------------------------- |
 | `~/.claude/hooks/statusline.js`       | Your live hook (edit or regenerate)      |
+| `~/.claude/hooks/gsd-statusline.js`   | Alternate live hook path used by many setups |
+| `~/.claude/statusline-presets.json`   | Imported custom presets for `/statusline-preset` |
+| `~/.claude/.statusline-active-preset` | Active preset name for the hook          |
+| `~/.claude/skills/statusline-preset/` | Slash command wiring for preset switching |
 | `~/.claude/settings.json`             | Wires the hook into Claude Code          |
 | `~/.claude/.caveman-active`           | Toggles the `[CAVEMAN]` badge            |
 | `~/.claude/.enforcer-preview`         | Forces `[ENFORCER:N/M]` with a value     |
