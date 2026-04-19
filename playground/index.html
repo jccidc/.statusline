@@ -1760,7 +1760,7 @@ function renderPromptOutput() {
   const sepDesc = `\`${sep}\` (color: ${ANSI_COLORS[state.sepColor].label}${sepStyles.length ? ', ' + sepStyles.join(' + ') : ''})`;
 
   const prompt =
-`Update my Claude Code statusline (\`~/.claude/hooks/gsd-statusline.js\`) to this layout.
+`Update my Claude Code statusline (\`~/.claude/hooks/statusline.js\`) to this layout.
 
 Segment order (left to right):
 ${orderStr}
@@ -1792,7 +1792,7 @@ ${state.showCaptions && state.segments.some(s => state.enabled.includes(s.id) &&
 
   \`\`\`bash
   echo '{"model":{"display_name":"Opus 4.7"},"workspace":{"current_dir":"\${PWD}"},"session_id":"t","context_window":{"remaining_percentage":90},"rate_limits":{"five_hour":{"used_percentage":23.5,"resets_at":1738425600},"seven_day":{"used_percentage":41.2,"resets_at":1738857600}}}' \\
-    | node ~/.claude/hooks/gsd-statusline.js
+    | node ~/.claude/hooks/statusline.js
   \`\`\`
 
 Show me the final statusline.js after editing, not just a diff or description.`;
