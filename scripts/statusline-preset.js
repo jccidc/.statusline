@@ -93,6 +93,21 @@ function listAllPresetRecords() {
   return builtIn.concat(custom).sort((a, b) => a.label.localeCompare(b.label));
 }
 
+function listImportedPresetRecords() {
+  return Object.entries(loadCustomPresetStore())
+    .map(([key, record]) => ({
+      key,
+      label: record.label || key,
+      source: 'imported',
+      snapshot: normalizeSnapshot(record.snapshot || record),
+    }))
+    .sort((a, b) => a.label.localeCompare(b.label));
+}
+
+function listBuiltInPresetRecords() {
+  return common.listBuiltInPresetRecords().sort((a, b) => a.label.localeCompare(b.label));
+}
+
 function findPresetRecord(name) {
   const needle = String(name || '').trim().toLowerCase();
   if (!needle) return null;
@@ -108,7 +123,8 @@ function findPresetRecord(name) {
 function closestPresetNames(name) {
   const needle = String(name || '').trim().toLowerCase();
   if (!needle) return [];
-  return listAllPresetRecords()
+  return listImportedPresetRecords()
+    .concat(listBuiltInPresetRecords())
     .filter(record =>
       record.key.toLowerCase().includes(needle) ||
       record.label.toLowerCase().includes(needle)
@@ -117,29 +133,26 @@ function closestPresetNames(name) {
     .map(record => record.key);
 }
 
-function formatRecordLine(record, activeName) {
-  const marker = record.key === activeName ? '* ' : '  ';
+function formatRecordLine(record, activeName, index) {
   const unsupported = common.listUnsupportedSegmentIds(record.snapshot);
   const suffix = unsupported.length ? ` (skips: ${unsupported.join(', ')})` : '';
-  return `${marker}${record.key} - ${record.label}${suffix}`;
+  const current = record.key === activeName ? ' [current]' : '';
+  const prefix = index != null ? `${index}. ` : '- ';
+  return `${prefix}${record.label} [${record.key}]${current}${suffix}`;
 }
 
-function renderList() {
+function renderSavedList() {
   const activeName = readActivePresetName() || common.DEFAULT_ACTIVE_PRESET;
-  const records = listAllPresetRecords();
-  const builtIn = records.filter(record => record.source === 'built-in');
-  const imported = records.filter(record => record.source === 'imported');
+  const imported = listImportedPresetRecords();
   const lines = [];
 
   lines.push(`Active preset: ${activeName}`);
   lines.push('');
-  lines.push('Built-in presets:');
-  for (const record of builtIn) lines.push(formatRecordLine(record, activeName));
-
-  lines.push('');
-  lines.push('Imported presets:');
+  lines.push('Saved presets:');
   if (imported.length) {
-    for (const record of imported) lines.push(formatRecordLine(record, activeName));
+    for (const [index, record] of imported.entries()) {
+      lines.push(formatRecordLine(record, activeName, index + 1));
+    }
   } else {
     lines.push('  (none)');
   }
@@ -147,15 +160,57 @@ function renderList() {
   lines.push('');
   lines.push('Use:');
   lines.push('/statusline-preset <name>');
+  if (imported.length) lines.push('/statusline-preset <number>');
+  lines.push('/statusline-preset all');
   lines.push('/statusline-preset import <payload>');
   lines.push('');
-  lines.push('* active preset');
+  lines.push('[current] = active preset');
 
   return lines.join('\n');
 }
 
+function renderAllList() {
+  const activeName = readActivePresetName() || common.DEFAULT_ACTIVE_PRESET;
+  const builtIn = listBuiltInPresetRecords();
+  const imported = listImportedPresetRecords();
+  const lines = [];
+
+  lines.push(`Active preset: ${activeName}`);
+  lines.push('');
+  lines.push('Saved presets:');
+  if (imported.length) {
+    for (const [index, record] of imported.entries()) {
+      lines.push(formatRecordLine(record, activeName, index + 1));
+    }
+  } else {
+    lines.push('  (none)');
+  }
+
+  lines.push('');
+  lines.push('Built-in presets:');
+  for (const record of builtIn) lines.push(formatRecordLine(record, activeName));
+
+  lines.push('');
+  lines.push('Use:');
+  lines.push('/statusline-preset <name>');
+  if (imported.length) lines.push('/statusline-preset <number>');
+  lines.push('/statusline-preset import <payload>');
+  lines.push('');
+  lines.push('[current] = active preset');
+
+  return lines.join('\n');
+}
+
+function findImportedByIndex(value) {
+  if (!/^\d+$/.test(String(value || '').trim())) return null;
+  const imported = listImportedPresetRecords();
+  const index = Number.parseInt(String(value).trim(), 10) - 1;
+  if (index < 0 || index >= imported.length) return null;
+  return imported[index];
+}
+
 function applyPreset(name) {
-  const record = findPresetRecord(name);
+  const record = findImportedByIndex(name) || findPresetRecord(name);
   if (!record) {
     const suggestions = closestPresetNames(name);
     const lines = [`Preset not found: ${name}`];
@@ -224,7 +279,12 @@ function importPreset(payload) {
 function main(argv) {
   const args = argv.filter(arg => arg !== '--raw');
   if (args.length === 0 || args[0] === 'list') {
-    process.stdout.write(renderList());
+    process.stdout.write(renderSavedList());
+    return;
+  }
+
+  if (args[0] === 'all' || args[0] === 'builtins') {
+    process.stdout.write(renderAllList());
     return;
   }
 

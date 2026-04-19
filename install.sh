@@ -134,7 +134,8 @@ cat <<EOF
 Done. Start a new Claude Code session to see the statusline.
 
 Installed extras:
-  /statusline-preset        # list presets
+  /statusline-preset        # list saved presets
+  /statusline-preset all    # list saved + built-in presets
   /statusline-preset NAME   # apply preset by name
 
 Optional toggles:

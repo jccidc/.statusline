@@ -1,7 +1,7 @@
 ---
 name: statusline-preset
 description: "List, import, or activate Claude Code statusline presets by name"
-argument-hint: "[name | import <payload>]"
+argument-hint: "[name | number | all | import <payload>]"
 allowed-tools:
   - Bash
 ---

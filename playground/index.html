@@ -87,6 +87,24 @@
   .preset-btn:hover, .btn:hover, .mini-btn:hover { background: var(--panel-3); border-color: #444c56; }
   .preset-btn:disabled, .btn:disabled { opacity: 0.4; cursor: not-allowed; }
   .preset-btn.active { border-color: var(--accent); background: #1e2a3a; }
+  .cta-link-claude {
+    background: linear-gradient(180deg, #ffb347 0%, #ff8a1f 100%);
+    color: #1a1208;
+    border-color: #ff9b31;
+    font-weight: 800;
+    letter-spacing: 0.02em;
+    padding: 7px 13px;
+    font-size: 11px;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.22), 0 0 0 1px rgba(255,138,31,0.18);
+  }
+  .cta-link-claude:hover {
+    background: linear-gradient(180deg, #ffc061 0%, #ff962c 100%);
+    border-color: #ffb35d;
+  }
+  .cta-link-claude:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+  }
   select, input[type=text], input[type=number] {
     background: var(--panel-2);
     color: var(--text);
@@ -465,6 +483,7 @@
     <button class="mini-btn" id="redo-btn" title="Redo (Ctrl+Y)">Redo</button>
     <button class="mini-btn" id="randomize-btn" title="Randomize">🎲 Randomize</button>
     <button class="mini-btn" id="save-preset-btn" title="Save current as custom preset">💾 Save</button>
+    <button class="mini-btn cta-link-claude" id="link-claude-top-btn" title="Pick your ~/.claude folder so Save can sync into /statusline-preset">Link Claude</button>
     <button class="mini-btn" id="copy-claude-btn" title="Copy /statusline-preset import command">Import</button>
     <button class="mini-btn" id="share-btn" title="Copy URL with state">🔗 Share</button>
     <button class="mini-btn" id="reset-btn" title="Reset to defaults">↺ Reset</button>
@@ -582,7 +601,7 @@
     <details>
       <summary>My saved presets</summary>
       <div class="row" style="margin-top:8px;gap:6px;align-items:center;flex-wrap:wrap;">
-        <button class="mini-btn" id="link-claude-btn" title="Pick your ~/.claude folder so Save can sync into /statusline-preset">Link Claude</button>
+        <button class="mini-btn cta-link-claude" id="link-claude-btn" title="Pick your ~/.claude folder so Save can sync into /statusline-preset">Link Claude</button>
         <button class="mini-btn" id="sync-claude-btn" title="Sync browser-saved presets into Claude">Sync</button>
         <span class="hint" id="claude-link-status">Not linked. Save stays browser-only.</span>
       </div>
@@ -1015,6 +1034,7 @@ const el = {
   randomizeBtn:   document.getElementById('randomize-btn'),
   loadPresetBtn:  document.getElementById('load-preset-btn'),
   savePresetBtn:  document.getElementById('save-preset-btn'),
+  linkClaudeTopBtn: document.getElementById('link-claude-top-btn'),
   copyClaudeBtn:  document.getElementById('copy-claude-btn'),
   shareBtn:       document.getElementById('share-btn'),
   resetBtn:       document.getElementById('reset-btn'),
@@ -1041,6 +1061,10 @@ function getSegment(id) {
   return c;
 }
 function isCustomSeg(id) { return id.startsWith('custom_'); }
+
+function allLinkClaudeButtons() {
+  return [el.linkClaudeTopBtn, el.linkClaudeBtn].filter(Boolean);
+}
 
 const CLAUDE_LINK_DB = 'statusline-playground';
 const CLAUDE_LINK_STORE = 'kv';
@@ -1181,7 +1205,10 @@ async function ensureClaudeDirHandle(options = {}) {
 
 async function updateClaudeLinkUi() {
   if (!supportsClaudeSync()) {
-    el.linkClaudeBtn.disabled = true;
+    for (const button of allLinkClaudeButtons()) {
+      button.disabled = true;
+      button.textContent = 'Link Claude';
+    }
     el.syncClaudeBtn.disabled = true;
     el.claudeLinkStatus.textContent = 'Browser cannot sync directly here. Use Claude import instead.';
     return;
@@ -1189,9 +1216,11 @@ async function updateClaudeLinkUi() {
 
   const handle = await getStoredClaudeDirHandle();
   if (!handle) {
-    el.linkClaudeBtn.disabled = false;
+    for (const button of allLinkClaudeButtons()) {
+      button.disabled = false;
+      button.textContent = 'Link Claude';
+    }
     el.syncClaudeBtn.disabled = true;
-    el.linkClaudeBtn.textContent = 'Link Claude';
     el.claudeLinkStatus.textContent = 'Not linked. Save stays browser-only.';
     return;
   }
@@ -1201,8 +1230,11 @@ async function updateClaudeLinkUi() {
     perm = await handle.queryPermission({ mode: 'readwrite' });
   } catch (e) {}
 
-  el.linkClaudeBtn.disabled = false;
-  el.linkClaudeBtn.textContent = perm === 'granted' ? 'Relink Claude' : 'Grant Claude';
+  const label = perm === 'granted' ? 'Relink Claude' : 'Grant Claude';
+  for (const button of allLinkClaudeButtons()) {
+    button.disabled = false;
+    button.textContent = label;
+  }
   el.syncClaudeBtn.disabled = perm !== 'granted';
   el.claudeLinkStatus.textContent = perm === 'granted'
     ? `Linked to "${handle.name}". Save syncs into Claude for /statusline-preset.`
@@ -2365,7 +2397,7 @@ el.randomizeBtn.onclick = randomize;
 el.loadPresetBtn.onclick = openPresetPicker;
 el.savePresetBtn.onclick = saveCurrentAsPreset;
 el.copyClaudeBtn.onclick = () => { copyClaudeImportCommand(); };
-el.linkClaudeBtn.onclick = async () => {
+async function handleLinkClaudeClick() {
   const handle = await ensureClaudeDirHandle({ prompt: true });
   if (!handle) {
     await updateClaudeLinkUi();
@@ -2374,7 +2406,9 @@ el.linkClaudeBtn.onclick = async () => {
   }
   const synced = await syncSavedPresetsToClaude({ silentSuccess: true });
   toast(synced ? 'Claude linked. Save now shows up in /statusline-preset' : 'Claude linked');
-};
+}
+el.linkClaudeTopBtn.onclick = handleLinkClaudeClick;
+el.linkClaudeBtn.onclick = handleLinkClaudeClick;
 el.syncClaudeBtn.onclick = async () => {
   await syncSavedPresetsToClaude({ prompt: true });
 };

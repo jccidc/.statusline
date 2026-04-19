@@ -27,7 +27,8 @@ Most people do not need to hand-edit the hook. The normal flow is:
 5. After that, just run:
 
    ```bash
-   /statusline-preset       # list available built-in + imported presets
+   /statusline-preset       # list your saved presets
+   /statusline-preset all   # show built-ins too
    /statusline-preset NAME  # switch to a preset by name
    ```
 
@@ -113,7 +114,8 @@ On Windows + Git Bash, use the forward-slash path:
 Start a new Claude Code session. You now have:
 
 ```bash
-/statusline-preset                 # list built-in + imported presets
+/statusline-preset                 # list saved presets
+/statusline-preset all             # show saved + built-in presets
 /statusline-preset NAME            # activate a preset by name
 /statusline-preset import PAYLOAD  # import + activate a playground preset
 ```
@@ -186,8 +188,9 @@ xdg-open ~/.statusline/playground/index.html
   setup.
 - Hit **💾 Save** to stash a custom preset in browser `localStorage`. If Claude
   is linked, the same save also syncs into `~/.claude/statusline-presets.json`.
-- Use `/statusline-preset` to list presets or `/statusline-preset NAME` to
-  switch instantly inside Claude Code.
+- Use `/statusline-preset` to list your saved presets, `/statusline-preset all`
+  to show built-ins too, or `/statusline-preset NAME` to switch instantly
+  inside Claude Code.
 - Hit **Import** only if you want the fallback `/statusline-preset import ...`
   command instead of direct Claude syncing.
 - Hit **Copy** only if you explicitly want a natural-language prompt that asks
