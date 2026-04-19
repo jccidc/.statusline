@@ -11,6 +11,30 @@ design your own and share it with teammates.
 
 ![playground preview](docs/preview-playground.png)
 
+## Quick start
+
+Most people do not need to hand-edit the hook. The normal flow is:
+
+1. Install the hook once:
+
+   ```bash
+   bash ~/.statusline/install.sh --yes
+   ```
+
+2. Open the playground, tune a preset, then click **Claude**.
+3. Paste the copied `/statusline-preset import ...` command into Claude Code once.
+4. After that, just run:
+
+   ```bash
+   /statusline-preset       # list available built-in + imported presets
+   /statusline-preset NAME  # switch to a preset by name
+   ```
+
+Important:
+
+- **Save** in the playground is browser-only (`localStorage`).
+- A preset shows up in `/statusline-preset` only after you import it into Claude.
+
 ## What's different
 
 - **Two lines.** The first is your live statusline; the second is a dim caption
