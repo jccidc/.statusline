@@ -16,9 +16,10 @@ design your own and share it with teammates.
 - **Two lines.** The first is your live statusline; the second is a dim caption
   row, width-aligned under each segment. No other statusline does this (Claude
   Code's multi-line renderer isn't documented — we spike-tested it).
-- **Live from your actual session logs.** Token counts, cost estimates, cache
-  hit %, today's spend, 5-hour message rate — all parsed from Claude Code's own
-  `~/.claude/projects/<cwd>/<session>.jsonl` files.
+- **Live from Claude's own local data.** Session tokens, cost, cache hit %, and
+  today's spend come from Claude Code's `~/.claude/projects/<cwd>/<session>.jsonl`
+  files. Native 5-hour and weekly quota data come from the statusline JSON on
+  stdin via `data.rate_limits`.
 - **Everything's a skippable segment.** No ledger? No `[ENFORCER]` badge. No
   git repo? No branch or repo name. Segments drop cleanly and take their
   separators with them.
@@ -40,19 +41,34 @@ design your own and share it with teammates.
 git clone https://github.com/jccidc/.statusline ~/.statusline
 ```
 
-### 2. Copy the hook into place
+### 2. Install it into Claude Code
 
 ```bash
-cp ~/.statusline/hook/statusline.js ~/.claude/hooks/statusline.js
+bash ~/.statusline/install.sh --yes
 ```
 
-> If you already have a hook at `~/.claude/hooks/gsd-statusline.js` or
-> `~/.claude/hooks/statusline.js`, back it up first:
-> `cp ~/.claude/hooks/statusline.js ~/.claude/hooks/statusline.js.bak`
+Interactive mode is also available:
+
+```bash
+bash ~/.statusline/install.sh
+```
+
+The installer:
+
+- Backs up existing hook/helper files before replacing them.
+- Copies the live hook to `~/.claude/hooks/statusline.js` and
+  `~/.claude/hooks/gsd-statusline.js`.
+- Copies the preset helper to `~/.claude/statusline/statusline-preset.js`.
+- Copies shared preset definitions to
+  `~/.claude/statusline/statusline-preset-common.js`.
+- Installs the slash-command skill at
+  `~/.claude/skills/statusline-preset/SKILL.md`.
+- Optionally wires `~/.claude/settings.json` to run the hook.
 
 ### 3. Wire it into Claude Code
 
-Open `~/.claude/settings.json` and add (or edit) the `statusLine` block:
+If `install.sh` updated `~/.claude/settings.json` for you, skip this section.
+Manual wiring looks like this:
 
 ```json
 {
@@ -66,7 +82,17 @@ Open `~/.claude/settings.json` and add (or edit) the `statusLine` block:
 On Windows + Git Bash, use the forward-slash path:
 `node "C:/Users/<you>/.claude/hooks/statusline.js"`.
 
-### 4. (Optional) Caveman-mode flag
+### 4. Restart Claude Code
+
+Start a new Claude Code session. You now have:
+
+```bash
+/statusline-preset                 # list built-in + imported presets
+/statusline-preset NAME            # activate a preset by name
+/statusline-preset import PAYLOAD  # import + activate a playground preset
+```
+
+### 5. (Optional) Caveman-mode flag
 
 The `[CAVEMAN]` badge only renders when `~/.claude/.caveman-active` exists.
 To toggle:
@@ -76,7 +102,7 @@ touch ~/.claude/.caveman-active   # on
 rm    ~/.claude/.caveman-active   # off
 ```
 
-### 5. (Optional) Preview the Plan Enforcer badge
+### 6. (Optional) Preview the Plan Enforcer badge
 
 The `[ENFORCER:N/M]` badge shows real progress from a project's
 `.plan-enforcer/ledger.md`. To preview the look without setting up a real
@@ -89,15 +115,22 @@ rm ~/.claude/.enforcer-preview             # off
 
 Real ledgers always win over the preview flag.
 
-### 6. Restart Claude Code
-
-Fire up a new session. Your statusline is now two-line and live.
-
-You also get:
+### 7. (Optional) Uninstall / restore the last backup
 
 ```bash
-/statusline-preset        # list built-in + imported presets
-/statusline-preset NAME   # activate a preset by name
+bash ~/.statusline/install.sh --uninstall
+```
+
+### 8. Manual install fallback
+
+```bash
+mkdir -p ~/.claude/hooks ~/.claude/statusline ~/.claude/skills/statusline-preset
+cp ~/.statusline/hook/statusline.js ~/.claude/hooks/statusline.js
+cp ~/.statusline/hook/statusline.js ~/.claude/hooks/gsd-statusline.js
+cp ~/.statusline/shared/statusline-preset-common.js ~/.claude/statusline/statusline-preset-common.js
+cp ~/.statusline/scripts/statusline-preset.js ~/.claude/statusline/statusline-preset.js
+cp ~/.statusline/.claude/skills/statusline-preset/SKILL.md ~/.claude/skills/statusline-preset/SKILL.md
+chmod +x ~/.claude/statusline/statusline-preset.js
 ```
 
 ## Design your own
@@ -116,35 +149,42 @@ xdg-open ~/.statusline/playground/index.html
 ```
 
 - Pick a preset, or start from `My defaults ★` and edit from there.
+- Hit **Load** to reopen presets saved in this browser.
 - Click "more…" on any segment to expand advanced styling (italic, bg color,
   truecolor hex, icon, bracket, case, sep-before, caption, max width).
-- Hit **Copy** to copy a natural-language prompt you can paste into Claude
-  Code — it'll rewrite your `hook/statusline.js` to match.
 - Hit **🔗 Share** to copy a URL with your full state embedded; hand the URL
   to anyone who has the playground HTML and their playground loads your exact
   setup.
-- Hit **💾 Save** to stash a custom preset in `localStorage`.
+- Hit **💾 Save** to stash a custom preset in browser `localStorage`. This is
+  playground-only.
 - Hit **Claude** to copy a `/statusline-preset import ...` command for the
-  current layout, then paste that command into Claude Code once to register
-  the preset under `~/.claude`.
+  current layout, then paste that command into Claude Code once to import and
+  activate the preset under `~/.claude`.
+- After that first import, use `/statusline-preset` to list presets or
+  `/statusline-preset NAME` to switch instantly.
+- Hit **Copy** only if you explicitly want a natural-language prompt that asks
+  Claude Code to rewrite the hook file itself.
 
-See [`docs/STATUSLINE.md`](docs/STATUSLINE.md) for an architectural deep-dive on
-how the bar is built and how to add your own segments.
+The preset/import workflow above is the current source of truth.
+[`docs/STATUSLINE.md`](docs/STATUSLINE.md) is lower-level renderer background.
 
 ## Share your statusline
 
-Five paths, ranked by recipient friction:
+Six paths, ranked by recipient friction:
 
 1. **URL share** — playground → 🔗 Share → send the URL. Recipient has the
    playground HTML → pastes URL → loads your setup verbatim.
-2. **Send playground HTML + URL** — email/Slack them `playground/index.html`
+2. **Claude import command** — playground → **Claude** → send them the
+   `/statusline-preset import ...` command. They paste once, then use
+   `/statusline-preset NAME` after that.
+3. **Send playground HTML + URL** — email/Slack them `playground/index.html`
    plus the share URL. Fully offline.
-3. **Copy the prompt** — playground → switch output to "Prompt" → Copy → paste
+4. **Copy the prompt** — playground → switch output to "Prompt" → Copy → paste
    into their Claude Code session. Claude rewrites their hook. Zero tooling
    needed on their end.
-4. **Send the JSON config** — playground → output "JSON" → Copy. A raw config
+5. **Send the JSON config** — playground → output "JSON" → Copy. A raw config
    artifact.
-5. **Send the hook file** — `hook/statusline.js` directly. Most accurate, most
+6. **Send the hook file** — `hook/statusline.js` directly. Most accurate, most
    invasive.
 
 ## Segments available
@@ -170,18 +210,20 @@ data simply skips (no empty slot, no dangling separator):
 | Session cost         | session JSONL × price table                             |
 | Cache hit %          | session JSONL `cache_read` ÷ total input                |
 | Today's cost         | all-session JSONL scan, mtime-filtered, 60s cache       |
-| Messages / 5h        | all-session JSONL scan, timestamp-filtered, 60s cache   |
+| 5h quota             | `data.rate_limits.five_hour` from Claude stdin          |
+| Weekly quota         | `data.rate_limits.seven_day` from Claude stdin          |
+| Messages / 5h (local) | all-session JSONL scan, timestamp-filtered, 60s cache  |
 
 ## Configuration knobs
 
 | File                                  | Purpose                                  |
 | ------------------------------------- | ---------------------------------------- |
-| `~/.claude/hooks/statusline.js`       | Your live hook (edit or regenerate)      |
+| `~/.claude/hooks/statusline.js`       | Installed live hook                      |
 | `~/.claude/hooks/gsd-statusline.js`   | Alternate live hook path used by many setups |
-| `~/.claude/statusline-presets.json`   | Imported custom presets for `/statusline-preset` |
-| `~/.claude/.statusline-active-preset` | Active preset name for the hook          |
-| `~/.claude/skills/statusline-preset/` | Slash command wiring for preset switching |
-| `~/.claude/settings.json`             | Wires the hook into Claude Code          |
+| `~/.claude/statusline-presets.json`   | Imported presets from `/statusline-preset import` |
+| `~/.claude/.statusline-active-preset` | Active preset name the hook renders      |
+| `~/.claude/skills/statusline-preset/` | Slash-command wiring for preset switching |
+| `~/.claude/settings.json`             | Wires Claude Code to run the hook        |
 | `~/.claude/.caveman-active`           | Toggles the `[CAVEMAN]` badge            |
 | `~/.claude/.enforcer-preview`         | Forces `[ENFORCER:N/M]` with a value     |
 | `<project>/.plan-enforcer/ledger.md`  | Real enforcer progress (walk-up)         |
