@@ -360,74 +360,6 @@
     z-index: 99;
   }
   .toast.show { opacity: 1; }
-
-  /* Config modal */
-  .cfg-backdrop {
-    position: fixed; inset: 0; background: rgba(0,0,0,0.55);
-    display: flex; align-items: center; justify-content: center;
-    z-index: 200;
-  }
-  .cfg-backdrop[hidden] { display: none; }
-  .cfg-card {
-    background: var(--panel-2);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 18px 20px;
-    width: min(480px, 92vw);
-    box-shadow: 0 20px 60px rgba(0,0,0,0.5);
-  }
-  .cfg-head {
-    display: flex; align-items: center; justify-content: space-between;
-    margin-bottom: 8px;
-  }
-  .cfg-note {
-    color: var(--text-dim);
-    font-size: 12px;
-    margin: 0 0 12px 0;
-    line-height: 1.4;
-  }
-  .cfg-row {
-    display: grid;
-    grid-template-columns: 160px 1fr;
-    gap: 10px;
-    align-items: center;
-    margin-bottom: 10px;
-  }
-  .cfg-row label { font-size: 13px; color: var(--text-dim); }
-  .cfg-row input, .cfg-row select {
-    background: var(--panel-3);
-    color: var(--text);
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    padding: 5px 8px;
-    font-family: inherit;
-    font-size: 13px;
-  }
-  .cfg-envbox {
-    margin-top: 14px;
-    border: 1px solid var(--border);
-    border-radius: 5px;
-    background: var(--panel-3);
-    padding: 8px 10px;
-  }
-  .cfg-envbox-head {
-    display: flex; align-items: center; justify-content: space-between;
-    font-size: 12px; color: var(--text-dim); margin-bottom: 6px;
-  }
-  .cfg-envbox pre {
-    margin: 0;
-    font-family: "Cascadia Mono", Menlo, Consolas, monospace;
-    font-size: 12px;
-    color: var(--text);
-    white-space: pre-wrap;
-    word-break: break-all;
-  }
-  .cfg-inline { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-dim); }
-  .cfg-inline code { background: var(--panel-3); padding: 1px 4px; border-radius: 3px; font-size: 11px; }
-  .cfg-details { margin-top: 14px; border-top: 1px solid var(--border); padding-top: 10px; }
-  .cfg-details summary { cursor: pointer; font-size: 13px; color: var(--text-dim); }
-  .cfg-details summary:hover { color: var(--text); }
-  .cfg-details .cfg-note { font-size: 12px; margin: 8px 0; }
 </style>
 </head>
 <body>
@@ -440,73 +372,9 @@
     <button class="mini-btn" id="randomize-btn" title="Randomize">🎲 Randomize</button>
     <button class="mini-btn" id="save-preset-btn" title="Save current as custom preset">💾 Save</button>
     <button class="mini-btn" id="share-btn" title="Copy URL with state">🔗 Share</button>
-    <button class="mini-btn" id="config-btn" title="Currency + budget ceilings">⚙ Config</button>
     <button class="mini-btn" id="reset-btn" title="Reset to defaults">↺ Reset</button>
   </div>
 </header>
-
-<!-- Config modal -->
-<div id="config-modal" class="cfg-backdrop" hidden>
-  <div class="cfg-card" role="dialog" aria-label="Statusline config">
-    <div class="cfg-head">
-      <strong>Statusline config</strong>
-      <button class="mini-btn" id="config-close" title="Close">✕</button>
-    </div>
-    <p class="cfg-note">Drives mock values in the playground AND is emitted as env vars for your hook. Copy the snippet at the bottom and paste into your shell profile.</p>
-    <div class="cfg-row">
-      <label for="cfg-currency">Currency</label>
-      <select id="cfg-currency">
-        <option value="USD">USD ($)</option>
-        <option value="SEK">SEK (kr)</option>
-      </select>
-    </div>
-    <div class="cfg-row" id="cfg-sek-rate-row">
-      <label for="cfg-sek-rate">USD → SEK rate</label>
-      <input type="number" id="cfg-sek-rate" step="0.1" min="0" />
-    </div>
-    <div class="cfg-row">
-      <label for="cfg-5h-ceiling">5h message ceiling</label>
-      <input type="number" id="cfg-5h-ceiling" step="1" min="0" placeholder="0 = unlimited" />
-    </div>
-    <div class="cfg-row">
-      <label for="cfg-wk-ceiling">Weekly cost ceiling (<span id="cfg-wk-unit">$</span>)</label>
-      <input type="number" id="cfg-wk-ceiling" step="1" min="0" placeholder="0 = unlimited" />
-    </div>
-    <div class="cfg-row">
-      <label for="cfg-authoritative">Authoritative preview</label>
-      <label class="cfg-inline"><input type="checkbox" id="cfg-authoritative" /> Show <code>*</code> caption (simulates quota file)</label>
-    </div>
-    <div class="cfg-envbox">
-      <div class="cfg-envbox-head">Env vars <button class="mini-btn" id="cfg-copy-env" title="Copy to clipboard">Copy</button></div>
-      <pre id="cfg-env-out"></pre>
-    </div>
-    <details class="cfg-details">
-      <summary>Authoritative quota file (optional)</summary>
-      <p class="cfg-note">For exact Anthropic numbers, have any scraper (ccusage, mitmproxy, etc.) write this JSON to the path below every ~5 min. Hook falls back to the local estimate if missing or stale (>15 min). Captions under the segments gain a trailing <code>*</code> when the hook uses authoritative data.</p>
-      <div class="cfg-envbox">
-        <div class="cfg-envbox-head">File path</div>
-        <pre>~/.claude/.statusline-quota.json</pre>
-      </div>
-      <div class="cfg-envbox">
-        <div class="cfg-envbox-head">Schema <button class="mini-btn" id="cfg-copy-schema" title="Copy to clipboard">Copy</button></div>
-<pre id="cfg-schema-out">{
-  "fetched_at": 1776614452,
-  "five_hour": {
-    "messages_used":  12,
-    "messages_limit": 225,
-    "resets_at":      1776625252
-  },
-  "weekly": {
-    "used_pct":  23,
-    "cost_usd":  47.32,
-    "limit_usd": 140,
-    "resets_at": 1777046452
-  }
-}</pre>
-      </div>
-    </details>
-  </div>
-</div>
 
 <div class="wrap">
 
@@ -789,8 +657,6 @@ const ALL_SEGMENTS = [
   { id: 'cacheHit',       label: 'Cache hit %',      text: '78% cached',             color: 'orange' },
   { id: 'todayCost',      label: "Today's cost",     text: '$14.82 today',           color: 'brightGreen' },
   { id: 'msgs5h',         label: 'Messages / 5h',    text: '23 msgs/5h',             color: 'brightYellow' },
-  { id: 'window5h',       label: '5h window',        text: '5h ████░░░░░░ 23/50 · 2h14m', color: 'brightYellow' },
-  { id: 'weeklyLimit',    label: 'Weekly limit',     text: 'wk ███░░░░░░░ $47/$140 · 4d3h', color: 'brightMagenta' },
 ];
 
 // Seed every segment with full style fields
@@ -1072,7 +938,6 @@ function applyPreset(name, fromHistory) {
   state.customSeparator = '';
   el.separatorSelect.value = [...el.separatorSelect.options].map(o => o.value).includes(p.separator) ? p.separator : 'custom';
   el.customSepRow.style.display = el.separatorSelect.value === 'custom' ? 'flex' : 'none';
-  if (typeof refreshMockSegments === 'function') refreshMockSegments();
   renderAll();
 }
 
@@ -1828,16 +1693,9 @@ function saveCurrentAsPreset() {
     }
     if (Object.keys(ov).length) overrides[seg.id] = ov;
   }
-  // Preserve user's reorder: enabled ids in state.order order, then any
-  // enabled custom/extra ids not in state.order appended.
-  const enabledSet = new Set(state.enabled);
-  const enabledInOrder = state.order.filter(id => enabledSet.has(id));
-  for (const id of state.enabled) {
-    if (!enabledInOrder.includes(id)) enabledInOrder.push(id);
-  }
   saved[key] = {
     label: name,
-    enabled: enabledInOrder,
+    enabled: state.enabled.slice(),
     separator: currentSeparator(),
     overrides,
   };
@@ -2017,135 +1875,6 @@ el.redoBtn.onclick = redo;
 el.randomizeBtn.onclick = randomize;
 el.savePresetBtn.onclick = saveCurrentAsPreset;
 el.shareBtn.onclick = shareUrl;
-
-/* ============================================================
- * Config (currency + ceilings)
- * Persists to localStorage. Drives mock text for window5h & weeklyLimit
- * segments AND emits env vars the user can paste into their shell.
- * ============================================================ */
-const CFG_KEY = 'statusline-playground-config';
-const defaultConfig = () => ({
-  currency: 'USD',       // 'USD' | 'SEK'
-  sekRate: 10.5,
-  msgCeiling5h: 50,
-  costCeilingWeek: 140,  // expressed in selected currency
-  authoritative: false,  // preview the `*` caption that the hook shows when quota file is live
-});
-function loadConfig() {
-  try {
-    const c = JSON.parse(localStorage.getItem(CFG_KEY) || 'null');
-    return Object.assign(defaultConfig(), c || {});
-  } catch (e) { return defaultConfig(); }
-}
-function saveConfig(c) {
-  try { localStorage.setItem(CFG_KEY, JSON.stringify(c)); } catch (e) {}
-}
-let config = loadConfig();
-
-function fmtCost(usd, cfg) {
-  const v = cfg.currency === 'SEK' ? usd * cfg.sekRate : usd;
-  if (cfg.currency === 'SEK') {
-    if (v < 1) return '0 kr';
-    if (v < 100) return Math.round(v) + ' kr';
-    return Math.round(v).toLocaleString('en-US').replace(/,/g, ' ') + ' kr';
-  }
-  if (usd < 0.01) return '$0.00';
-  if (usd < 100) return '$' + v.toFixed(2);
-  return '$' + v.toFixed(0);
-}
-function fmtCeiling(amt, cfg) {
-  return cfg.currency === 'SEK' ? `${Math.round(amt)} kr` : `$${amt}`;
-}
-function buildBar(pct) {
-  const p = Math.min(100, Math.max(0, pct));
-  const filled = Math.min(10, Math.floor(p / 10));
-  return '█'.repeat(filled) + '░'.repeat(10 - filled);
-}
-function refreshMockSegments() {
-  const star = config.authoritative ? '*' : '';
-  // window5h: mock 23 msgs of ceiling, 2h14m left
-  const w5 = state.segments.find(s => s.id === 'window5h');
-  if (w5) {
-    if (config.msgCeiling5h > 0) {
-      const msgs = Math.min(Math.round(config.msgCeiling5h * 0.46), config.msgCeiling5h);
-      const pct = (msgs / config.msgCeiling5h) * 100;
-      w5.text = `5h ${buildBar(pct)} ${msgs}/${config.msgCeiling5h} · 2h14m`;
-    } else {
-      w5.text = `5h: 23 · 2h14m`;
-    }
-    w5.caption = `5h window${star}`;
-  }
-  // weeklyLimit: mock $47 USD equivalent of ceiling 33%
-  const wk = state.segments.find(s => s.id === 'weeklyLimit');
-  if (wk) {
-    const usdMock = 47.32;
-    if (config.costCeilingWeek > 0) {
-      const displayAmt = config.currency === 'SEK' ? usdMock * config.sekRate : usdMock;
-      const pct = Math.min(100, (displayAmt / config.costCeilingWeek) * 100);
-      wk.text = `wk ${buildBar(pct)} ${fmtCost(usdMock, config)}/${fmtCeiling(config.costCeilingWeek, config)} · 4d3h`;
-    } else {
-      wk.text = `wk: ${fmtCost(usdMock, config)} · 4d3h`;
-    }
-    wk.caption = `weekly${star}`;
-  }
-}
-function renderEnvOut() {
-  const lines = [];
-  lines.push(`export STATUSLINE_CURRENCY=${config.currency}`);
-  if (config.currency === 'SEK') lines.push(`export STATUSLINE_SEK_RATE=${config.sekRate}`);
-  if (config.msgCeiling5h > 0) lines.push(`export STATUSLINE_5H_MSG_CEILING=${config.msgCeiling5h}`);
-  if (config.costCeilingWeek > 0) lines.push(`export STATUSLINE_WEEKLY_COST_CEILING=${config.costCeilingWeek}`);
-  document.getElementById('cfg-env-out').textContent = lines.join('\n');
-}
-function syncConfigUI() {
-  document.getElementById('cfg-currency').value = config.currency;
-  document.getElementById('cfg-sek-rate').value = config.sekRate;
-  document.getElementById('cfg-5h-ceiling').value = config.msgCeiling5h;
-  document.getElementById('cfg-wk-ceiling').value = config.costCeilingWeek;
-  document.getElementById('cfg-authoritative').checked = !!config.authoritative;
-  document.getElementById('cfg-sek-rate-row').style.display = config.currency === 'SEK' ? 'grid' : 'none';
-  document.getElementById('cfg-wk-unit').textContent = config.currency === 'SEK' ? 'kr' : '$';
-  renderEnvOut();
-}
-function openConfig() {
-  syncConfigUI();
-  document.getElementById('config-modal').hidden = false;
-}
-function closeConfig() {
-  document.getElementById('config-modal').hidden = true;
-}
-function onConfigChange() {
-  config.currency       = document.getElementById('cfg-currency').value;
-  config.sekRate        = Math.max(0, Number(document.getElementById('cfg-sek-rate').value) || 0);
-  config.msgCeiling5h   = Math.max(0, Number(document.getElementById('cfg-5h-ceiling').value) || 0);
-  config.costCeilingWeek= Math.max(0, Number(document.getElementById('cfg-wk-ceiling').value) || 0);
-  config.authoritative  = document.getElementById('cfg-authoritative').checked;
-  saveConfig(config);
-  syncConfigUI();
-  refreshMockSegments();
-  renderAll();
-}
-
-document.getElementById('config-btn').onclick = openConfig;
-document.getElementById('config-close').onclick = closeConfig;
-document.getElementById('config-modal').addEventListener('click', ev => {
-  if (ev.target.id === 'config-modal') closeConfig();
-});
-['cfg-currency','cfg-sek-rate','cfg-5h-ceiling','cfg-wk-ceiling','cfg-authoritative'].forEach(id => {
-  document.getElementById(id).addEventListener('input', onConfigChange);
-  document.getElementById(id).addEventListener('change', onConfigChange);
-});
-document.getElementById('cfg-copy-env').onclick = async () => {
-  const txt = document.getElementById('cfg-env-out').textContent;
-  try { await navigator.clipboard.writeText(txt); toast('Env vars copied'); }
-  catch (e) { toast('Copy failed'); }
-};
-document.getElementById('cfg-copy-schema').onclick = async () => {
-  const txt = document.getElementById('cfg-schema-out').textContent;
-  try { await navigator.clipboard.writeText(txt); toast('Schema copied'); }
-  catch (e) { toast('Copy failed'); }
-};
-
 el.resetBtn.onclick = () => {
   if (!confirm('Reset playground to defaults? Saved presets are kept.')) return;
   pushHistory();
@@ -2224,8 +1953,6 @@ function boot() {
     el.zoomSelect.value = state.zoom;
     renderAll();
   }
-  refreshMockSegments();
-  renderAll();
 }
 boot();
 </script>

@@ -246,74 +246,16 @@ process.stdin.on('end', () => {
       } catch (e) {}
       return out;
     }
-    // One-pass multi-window read. `windows` is { key: cutoffMs, ... }.
-    // Returns { key: { cost, msgCount, earliestTs, lastTs } }.
-    function readJsonlWindows(filepath, windows) {
-      const out = {};
-      for (const k of Object.keys(windows)) {
-        out[k] = { cost: 0, msgCount: 0, earliestTs: 0, lastTs: 0 };
-      }
-      try {
-        const raw = fs.readFileSync(filepath, 'utf8');
-        const lines = raw.split('\n');
-        for (const line of lines) {
-          if (!line) continue;
-          let d;
-          try { d = JSON.parse(line); } catch (e) { continue; }
-          if (d.type !== 'assistant') continue;
-          const ts = d.timestamp ? Date.parse(d.timestamp) : 0;
-          if (!ts) continue;
-          const msg = d.message || {};
-          const u = msg.usage;
-          if (!u) continue;
-          const cost = costOfUsage(u, msg.model);
-          for (const [k, cutoff] of Object.entries(windows)) {
-            if (ts < cutoff) continue;
-            const s = out[k];
-            s.cost += cost;
-            s.msgCount += 1;
-            if (!s.earliestTs || ts < s.earliestTs) s.earliestTs = ts;
-            if (ts > s.lastTs) s.lastTs = ts;
-          }
-        }
-      } catch (e) {}
-      return out;
-    }
-    function formatDuration(ms) {
-      if (ms <= 0) return '0m';
-      const s = Math.floor(ms / 1000);
-      const d = Math.floor(s / 86400);
-      const h = Math.floor((s % 86400) / 3600);
-      const m = Math.floor((s % 3600) / 60);
-      if (d > 0) return d + 'd' + (h ? h + 'h' : '');
-      if (h > 0) return h + 'h' + (m ? m + 'm' : '');
-      return m + 'm';
-    }
     function formatTokens(n) {
       if (n < 1000) return String(n);
       if (n < 1e6) return (n / 1000).toFixed(n < 10000 ? 1 : 0).replace(/\.0$/, '') + 'k';
       return (n / 1e6).toFixed(1).replace(/\.0$/, '') + 'M';
     }
-    // Display currency. USD native; SEK converted via STATUSLINE_SEK_RATE.
-    // All internal costs stay USD; only display layer converts.
-    const CURRENCY = (process.env.STATUSLINE_CURRENCY || 'USD').toUpperCase() === 'SEK' ? 'SEK' : 'USD';
-    const SEK_RATE = Number(process.env.STATUSLINE_SEK_RATE || 10.5);
-    function toDisplay(usd) {
-      return CURRENCY === 'SEK' ? usd * SEK_RATE : usd;
-    }
-    function formatCost(usd) {
-      const v = toDisplay(usd);
-      if (CURRENCY === 'SEK') {
-        if (v < 1) return '0 kr';
-        if (v < 100) return Math.round(v) + ' kr';
-        return Math.round(v).toLocaleString('en-US').replace(/,/g, ' ') + ' kr';
-      }
-      if (usd < 0.01) return '$0.00';
-      if (usd < 100) return '$' + v.toFixed(2);
-      return '$' + v.toFixed(0);
-    }
-    function formatCeiling(displayAmount) {
-      return CURRENCY === 'SEK' ? `${Math.round(displayAmount)} kr` : `$${displayAmount}`;
+    function formatCost(c) {
+      if (c < 0.01) return '$0.00';
+      if (c < 1) return '$' + c.toFixed(2);
+      if (c < 100) return '$' + c.toFixed(2);
+      return '$' + c.toFixed(0);
     }
 
     // Current session stats (live, no cache — file is append-only, reading whole file is cheap).
@@ -324,13 +266,8 @@ process.stdin.on('end', () => {
       if (fs.existsSync(sessionFile)) sessionStats = readJsonlStats(sessionFile, 0);
     }
 
-    // Cross-session aggregates, cached in tmp for 60s.
-    // Windows: 5h (rolling), today (since midnight), week (rolling 7d).
-    let aggStats = {
-      todayCost: 0,
-      msgs5h: 0, cost5h: 0, earliest5h: 0,
-      msgsWeek: 0, costWeek: 0, earliestWeek: 0,
-    };
+    // Cross-session aggregates (today's cost + messages-this-5h), cached in tmp for 60s.
+    let aggStats = { todayCost: 0, msgs5h: 0 };
     try {
       const cachePath = path.join(os.tmpdir(), 'claude-statusline-agg.json');
       const now = Date.now();
@@ -342,25 +279,13 @@ process.stdin.on('end', () => {
         } catch (e) {}
       }
       if (cached) {
-        aggStats = {
-          todayCost:    cached.todayCost    || 0,
-          msgs5h:       cached.msgs5h       || 0,
-          cost5h:       cached.cost5h       || 0,
-          earliest5h:   cached.earliest5h   || 0,
-          msgsWeek:     cached.msgsWeek     || 0,
-          costWeek:     cached.costWeek     || 0,
-          earliestWeek: cached.earliestWeek || 0,
-        };
+        aggStats = { todayCost: cached.todayCost || 0, msgs5h: cached.msgs5h || 0 };
       } else {
         const projectsDir = path.join(claudeDir, 'projects');
         const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
         const todayMs = todayStart.getTime();
         const fiveHAgo = now - 5 * 60 * 60 * 1000;
-        const weekAgo  = now - 7 * 24 * 60 * 60 * 1000;
-        const windows = { today: todayMs, window5h: fiveHAgo, week: weekAgo };
-        const oldest  = Math.min(todayMs, fiveHAgo, weekAgo);
-        let todayCost = 0, msgs5h = 0, cost5h = 0, earliest5h = 0;
-        let msgsWeek = 0, costWeek = 0, earliestWeek = 0;
+        let todayCost = 0, msgs5h = 0;
         try {
           const projects = fs.readdirSync(projectsDir);
           for (const p of projects) {
@@ -372,58 +297,23 @@ process.stdin.on('end', () => {
               const fp = path.join(pDir, f);
               let st;
               try { st = fs.statSync(fp); } catch (e) { continue; }
-              // Skip files untouched for longer than every window of interest.
-              if (st.mtimeMs < oldest) continue;
-              const w = readJsonlWindows(fp, windows);
-              todayCost += w.today.cost;
-              msgs5h    += w.window5h.msgCount;
-              cost5h    += w.window5h.cost;
-              if (w.window5h.earliestTs && (!earliest5h || w.window5h.earliestTs < earliest5h)) {
-                earliest5h = w.window5h.earliestTs;
-              }
-              msgsWeek  += w.week.msgCount;
-              costWeek  += w.week.cost;
-              if (w.week.earliestTs && (!earliestWeek || w.week.earliestTs < earliestWeek)) {
-                earliestWeek = w.week.earliestTs;
-              }
+              // Skip files that clearly haven't been touched in the relevant window.
+              if (st.mtimeMs < todayMs && st.mtimeMs < fiveHAgo) continue;
+              const s = readJsonlStats(fp, Math.min(todayMs, fiveHAgo));
+              // Redistribute: cost-since-today vs msgs-since-5h — re-parse needed
+              // because readJsonlStats applies a single cutoff. Call twice with
+              // specific windows.
+              const sToday = readJsonlStats(fp, todayMs);
+              const s5h = readJsonlStats(fp, fiveHAgo);
+              todayCost += sToday.cost;
+              msgs5h += s5h.msgCount;
             }
           }
         } catch (e) {}
-        aggStats = { todayCost, msgs5h, cost5h, earliest5h, msgsWeek, costWeek, earliestWeek };
+        aggStats = { todayCost, msgs5h };
         try {
           fs.writeFileSync(cachePath, JSON.stringify({ fetchedAt: now, ...aggStats }));
         } catch (e) {}
-      }
-    } catch (e) {}
-
-    // Authoritative quota override (optional escape hatch).
-    // If a scraper (ccusage, mitmproxy capture, corporate bot, future `claude usage --json`)
-    // writes ~/.claude/.statusline-quota.json within the last 15 min, the hook uses its
-    // numbers instead of the local estimate. Override path: STATUSLINE_QUOTA_FILE.
-    // Schema (all fields optional — hook gracefully uses whatever is present):
-    //   {
-    //     "fetched_at": <unix seconds>,            // required for freshness check
-    //     "five_hour": {
-    //       "messages_used":   <number>,
-    //       "messages_limit":  <number>,
-    //       "used_pct":        <number 0-100>,     // used if messages_* absent
-    //       "resets_at":       <unix seconds>      // time-left comes from here
-    //     },
-    //     "weekly": {
-    //       "used_pct":        <number 0-100>,
-    //       "cost_usd":        <number>,           // optional alternative display
-    //       "limit_usd":       <number>,
-    //       "resets_at":       <unix seconds>
-    //     }
-    //   }
-    let quota = null;
-    try {
-      const quotaPath = process.env.STATUSLINE_QUOTA_FILE ||
-                        path.join(homeDir, '.claude', '.statusline-quota.json');
-      if (fs.existsSync(quotaPath)) {
-        const q = JSON.parse(fs.readFileSync(quotaPath, 'utf8'));
-        const fetchedAt = (q && q.fetched_at) ? q.fetched_at * 1000 : 0;
-        if (fetchedAt && Date.now() - fetchedAt < 15 * 60 * 1000) quota = q;
       }
     } catch (e) {}
 
@@ -473,91 +363,6 @@ process.stdin.on('end', () => {
     // if (aggStats.msgs5h > 0) {
     //   segs.push({ text: aggStats.msgs5h + ' msgs/5h', codes: '93', caption: 'msgs', sepBefore: null });
     // }
-
-    // Helper: pick a color code based on % used. Flashing red at 90+.
-    function pctCodes(pct, baseColor) {
-      if (pct >= 90) return '5;31';
-      if (pct >= 75) return '38;5;208';
-      if (pct >= 50) return '33';
-      return baseColor;
-    }
-    function barStr(pct) {
-      const p = Math.min(100, Math.max(0, pct));
-      const filled = Math.min(10, Math.floor(p / 10));
-      return '█'.repeat(filled) + '░'.repeat(10 - filled);
-    }
-
-    // 5h window segment. Prefers authoritative quota file if present.
-    const q5 = quota && quota.five_hour;
-    const hasQuota5h = q5 && (q5.resets_at || q5.messages_used != null || q5.used_pct != null);
-    if (hasQuota5h) {
-      const timeLeft = q5.resets_at ? Math.max(0, q5.resets_at * 1000 - Date.now()) : 0;
-      const left = q5.resets_at ? formatDuration(timeLeft) : '?';
-      let pct = 0, label = '';
-      if (q5.messages_used != null && q5.messages_limit) {
-        pct = Math.min(100, Math.round((q5.messages_used / q5.messages_limit) * 100));
-        label = `${q5.messages_used}/${q5.messages_limit}`;
-      } else if (q5.used_pct != null) {
-        pct = Math.min(100, Math.round(q5.used_pct));
-        label = `${pct}%`;
-      } else if (q5.messages_used != null) {
-        label = String(q5.messages_used);
-      }
-      const text = `5h ${barStr(pct)} ${label} · ${left}`;
-      segs.push({ text, codes: pctCodes(pct, '93'), caption: '5h window*', sepBefore: null, align: 'left' });
-    } else if (aggStats.earliest5h) {
-      // Fallback: local estimate
-      const timeLeft = Math.max(0, (5 * 3600 * 1000) - (Date.now() - aggStats.earliest5h));
-      const left = formatDuration(timeLeft);
-      const ceiling = Number(process.env.STATUSLINE_5H_MSG_CEILING || 0);
-      let text, codes;
-      if (ceiling > 0) {
-        const pct = Math.min(100, Math.round((aggStats.msgs5h / ceiling) * 100));
-        text = `5h ${barStr(pct)} ${aggStats.msgs5h}/${ceiling} · ${left}`;
-        codes = pctCodes(pct, '93');
-      } else {
-        text = `5h: ${aggStats.msgs5h} · ${left}`;
-        codes = '93';
-      }
-      segs.push({ text, codes, caption: '5h window', sepBefore: null, align: 'left' });
-    }
-
-    // Weekly segment. Prefers authoritative quota file if present.
-    const qw = quota && quota.weekly;
-    const hasQuotaWk = qw && (qw.resets_at || qw.used_pct != null || qw.cost_usd != null);
-    if (hasQuotaWk) {
-      const timeLeft = qw.resets_at ? Math.max(0, qw.resets_at * 1000 - Date.now()) : 0;
-      const left = qw.resets_at ? formatDuration(timeLeft) : '?';
-      let pct = 0, label = '';
-      if (qw.used_pct != null) {
-        pct = Math.min(100, Math.round(qw.used_pct));
-        label = `${pct}%`;
-      } else if (qw.cost_usd != null && qw.limit_usd) {
-        pct = Math.min(100, Math.round((qw.cost_usd / qw.limit_usd) * 100));
-        label = `${formatCost(qw.cost_usd)}/${formatCeiling(toDisplay(qw.limit_usd))}`;
-      } else if (qw.cost_usd != null) {
-        label = formatCost(qw.cost_usd);
-      }
-      const text = `wk ${barStr(pct)} ${label} · ${left}`;
-      segs.push({ text, codes: pctCodes(pct, '95'), caption: 'weekly*', sepBefore: null, align: 'left' });
-    } else if (aggStats.earliestWeek) {
-      // Fallback: local estimate
-      const timeLeft = Math.max(0, (7 * 86400 * 1000) - (Date.now() - aggStats.earliestWeek));
-      const left = formatDuration(timeLeft);
-      const costStr = formatCost(aggStats.costWeek);
-      const ceilingDisplay = Number(process.env.STATUSLINE_WEEKLY_COST_CEILING || 0);
-      let text, codes;
-      if (ceilingDisplay > 0) {
-        const costDisplay = toDisplay(aggStats.costWeek);
-        const pct = Math.min(100, Math.round((costDisplay / ceilingDisplay) * 100));
-        text = `wk ${barStr(pct)} ${costStr}/${formatCeiling(ceilingDisplay)} · ${left}`;
-        codes = pctCodes(pct, '95');
-      } else {
-        text = `wk: ${costStr} · ${left}`;
-        codes = '95';
-      }
-      segs.push({ text, codes, caption: 'weekly', sepBefore: null, align: 'left' });
-    }
 
     // Visible-width helper (rough: emoji / symbol code points = 2 cols).
     function visibleLen(s) {
