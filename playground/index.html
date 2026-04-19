@@ -465,7 +465,7 @@
     <button class="mini-btn" id="redo-btn" title="Redo (Ctrl+Y)">Redo</button>
     <button class="mini-btn" id="randomize-btn" title="Randomize">🎲 Randomize</button>
     <button class="mini-btn" id="save-preset-btn" title="Save current as custom preset">💾 Save</button>
-    <button class="mini-btn" id="copy-claude-btn" title="Copy /statusline-preset import command">Claude</button>
+    <button class="mini-btn" id="copy-claude-btn" title="Copy /statusline-preset import command">Import</button>
     <button class="mini-btn" id="share-btn" title="Copy URL with state">🔗 Share</button>
     <button class="mini-btn" id="reset-btn" title="Reset to defaults">↺ Reset</button>
   </div>
@@ -581,8 +581,13 @@
 
     <details>
       <summary>My saved presets</summary>
+      <div class="row" style="margin-top:8px;gap:6px;align-items:center;flex-wrap:wrap;">
+        <button class="mini-btn" id="link-claude-btn" title="Pick your ~/.claude folder so Save can sync into /statusline-preset">Link Claude</button>
+        <button class="mini-btn" id="sync-claude-btn" title="Sync browser-saved presets into Claude">Sync</button>
+        <span class="hint" id="claude-link-status">Not linked. Save stays browser-only.</span>
+      </div>
       <div id="saved-preset-list" style="margin-top:8px;"></div>
-      <div class="hint">Saved in this browser. Use Claude to copy a `/statusline-preset import ...` command for Claude Code.</div>
+      <div class="hint">Once linked, normal Save syncs here and Claude can list them with `/statusline-preset`.</div>
     </details>
 
     <details>
@@ -1014,6 +1019,9 @@ const el = {
   shareBtn:       document.getElementById('share-btn'),
   resetBtn:       document.getElementById('reset-btn'),
   addCustomBtn:   document.getElementById('add-custom-btn'),
+  linkClaudeBtn:  document.getElementById('link-claude-btn'),
+  syncClaudeBtn:  document.getElementById('sync-claude-btn'),
+  claudeLinkStatus: document.getElementById('claude-link-status'),
   savedPresetList:document.getElementById('saved-preset-list'),
   presetModal:    document.getElementById('preset-modal'),
   presetSearch:   document.getElementById('preset-search'),
@@ -1033,6 +1041,215 @@ function getSegment(id) {
   return c;
 }
 function isCustomSeg(id) { return id.startsWith('custom_'); }
+
+const CLAUDE_LINK_DB = 'statusline-playground';
+const CLAUDE_LINK_STORE = 'kv';
+const CLAUDE_DIR_HANDLE_KEY = 'claude-dir-handle';
+
+function cloneJson(value) {
+  return JSON.parse(JSON.stringify(value));
+}
+
+function supportsClaudeSync() {
+  return !!(window.isSecureContext && window.indexedDB && window.showDirectoryPicker);
+}
+
+function openClaudeLinkDb() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(CLAUDE_LINK_DB, 1);
+    req.onupgradeneeded = () => {
+      if (!req.result.objectStoreNames.contains(CLAUDE_LINK_STORE)) {
+        req.result.createObjectStore(CLAUDE_LINK_STORE);
+      }
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function idbGet(key) {
+  const db = await openClaudeLinkDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(CLAUDE_LINK_STORE, 'readonly');
+    const store = tx.objectStore(CLAUDE_LINK_STORE);
+    const req = store.get(key);
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function idbSet(key, value) {
+  const db = await openClaudeLinkDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(CLAUDE_LINK_STORE, 'readwrite');
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+    tx.objectStore(CLAUDE_LINK_STORE).put(value, key);
+  });
+}
+
+async function getStoredClaudeDirHandle() {
+  if (!supportsClaudeSync()) return null;
+  try {
+    return await idbGet(CLAUDE_DIR_HANDLE_KEY);
+  } catch (e) {
+    return null;
+  }
+}
+
+async function setStoredClaudeDirHandle(handle) {
+  if (!supportsClaudeSync()) return;
+  await idbSet(CLAUDE_DIR_HANDLE_KEY, handle);
+}
+
+async function normalizeSnapshotForClaude(snapshot) {
+  if (!snapshot || typeof snapshot !== 'object') return null;
+  return {
+    enabled: Array.isArray(snapshot.enabled) ? snapshot.enabled.slice() : [],
+    separator: snapshot.separator || ' | ',
+    sepColor: snapshot.sepColor || 'gray',
+    sepBold: !!snapshot.sepBold,
+    sepDim: !!snapshot.sepDim,
+    showCaptions: snapshot.showCaptions !== false,
+    overrides: snapshot.overrides && typeof snapshot.overrides === 'object'
+      ? cloneJson(snapshot.overrides)
+      : {},
+  };
+}
+
+function parseClaudePresetStore(raw) {
+  try {
+    const parsed = JSON.parse(raw || '{}');
+    if (parsed && typeof parsed === 'object' && parsed.presets && typeof parsed.presets === 'object') {
+      return cloneJson(parsed.presets);
+    }
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      return cloneJson(parsed);
+    }
+  } catch (e) {}
+  return {};
+}
+
+async function getClaudePresetFileHandle(dirHandle) {
+  return dirHandle.getFileHandle('statusline-presets.json', { create: true });
+}
+
+async function loadClaudePresetStore(dirHandle) {
+  try {
+    const fileHandle = await getClaudePresetFileHandle(dirHandle);
+    const file = await fileHandle.getFile();
+    return parseClaudePresetStore(await file.text());
+  } catch (e) {
+    return {};
+  }
+}
+
+async function saveClaudePresetStore(dirHandle, store) {
+  const fileHandle = await getClaudePresetFileHandle(dirHandle);
+  const writable = await fileHandle.createWritable();
+  await writable.write(JSON.stringify({ version: 1, presets: store }, null, 2) + '\n');
+  await writable.close();
+}
+
+async function ensureClaudeDirHandle(options = {}) {
+  const promptUser = !!options.prompt;
+  if (!supportsClaudeSync()) return null;
+
+  let handle = await getStoredClaudeDirHandle();
+  if (!handle && promptUser) {
+    try {
+      handle = await window.showDirectoryPicker({ id: 'claude-config-dir', mode: 'readwrite' });
+      await setStoredClaudeDirHandle(handle);
+    } catch (e) {
+      return null;
+    }
+  }
+  if (!handle) return null;
+
+  try {
+    let perm = await handle.queryPermission({ mode: 'readwrite' });
+    if (perm !== 'granted' && promptUser && handle.requestPermission) {
+      perm = await handle.requestPermission({ mode: 'readwrite' });
+    }
+    if (perm !== 'granted') return null;
+  } catch (e) {
+    if (promptUser) return null;
+  }
+
+  return handle;
+}
+
+async function updateClaudeLinkUi() {
+  if (!supportsClaudeSync()) {
+    el.linkClaudeBtn.disabled = true;
+    el.syncClaudeBtn.disabled = true;
+    el.claudeLinkStatus.textContent = 'Browser cannot sync directly here. Use Claude import instead.';
+    return;
+  }
+
+  const handle = await getStoredClaudeDirHandle();
+  if (!handle) {
+    el.linkClaudeBtn.disabled = false;
+    el.syncClaudeBtn.disabled = true;
+    el.linkClaudeBtn.textContent = 'Link Claude';
+    el.claudeLinkStatus.textContent = 'Not linked. Save stays browser-only.';
+    return;
+  }
+
+  let perm = 'prompt';
+  try {
+    perm = await handle.queryPermission({ mode: 'readwrite' });
+  } catch (e) {}
+
+  el.linkClaudeBtn.disabled = false;
+  el.linkClaudeBtn.textContent = perm === 'granted' ? 'Relink Claude' : 'Grant Claude';
+  el.syncClaudeBtn.disabled = perm !== 'granted';
+  el.claudeLinkStatus.textContent = perm === 'granted'
+    ? `Linked to "${handle.name}". Save syncs into Claude for /statusline-preset.`
+    : `Linked folder "${handle.name}" needs permission again.`;
+}
+
+async function syncSavedPresetsToClaude(options = {}) {
+  const promptUser = !!options.prompt;
+  const silentNoLink = !!options.silentNoLink;
+  const silentSuccess = !!options.silentSuccess;
+
+  if (!supportsClaudeSync()) {
+    if (!silentNoLink) toast('Browser cannot sync directly here');
+    return false;
+  }
+
+  const dirHandle = await ensureClaudeDirHandle({ prompt: promptUser });
+  if (!dirHandle) {
+    if (!silentNoLink) toast('Claude not linked');
+    await updateClaudeLinkUi();
+    return false;
+  }
+
+  const store = await loadClaudePresetStore(dirHandle);
+  const saved = loadSavedPresets();
+  const now = new Date().toISOString();
+
+  for (const key of Object.keys(store)) {
+    if (key.startsWith('saved:') && !saved[key]) delete store[key];
+  }
+
+  for (const [key, record] of Object.entries(saved)) {
+    const snapshot = await normalizeSnapshotForClaude(record.snapshot || record);
+    if (!snapshot || !snapshot.enabled.length) continue;
+    store[key] = {
+      label: record.label || key,
+      snapshot,
+      importedAt: store[key]?.importedAt || now,
+      source: 'playground',
+    };
+  }
+
+  await saveClaudePresetStore(dirHandle, store);
+  await updateClaudeLinkUi();
+  if (!silentSuccess) toast('Synced saved presets to Claude');
+  return true;
+}
 
 /* ============================================================
  * Preset apply
@@ -1186,14 +1403,14 @@ function renderSavedPresets() {
     btn.onclick = () => applyPreset(key);
     const claude = document.createElement('button');
     claude.className = 'mini-btn';
-    claude.textContent = 'Claude';
+    claude.textContent = 'Import';
     claude.title = 'Copy /statusline-preset import command';
     claude.onclick = () => { copyClaudeImportCommand(key); };
     const del = document.createElement('button');
     del.className = 'mini-btn';
     del.textContent = '×';
     del.title = 'Delete';
-    del.onclick = () => { deleteSavedPreset(key); renderAll(); };
+    del.onclick = async () => { await deleteSavedPreset(key); renderAll(); };
     row.appendChild(btn);
     row.appendChild(claude);
     row.appendChild(del);
@@ -1882,7 +2099,7 @@ async function copyClaudeImportCommand(savedKey) {
     toast('Clipboard copy failed');
   }
 }
-function saveCurrentAsPreset() {
+async function saveCurrentAsPreset() {
   const name = prompt('Name this preset:');
   if (!name) return;
   const key = slugifyPresetName(name);
@@ -1892,14 +2109,16 @@ function saveCurrentAsPreset() {
     snapshot: buildSnapshotFromState(),
   };
   writeSavedPresets(saved);
-  toast(`Saved "${name}"`);
+  const synced = await syncSavedPresetsToClaude({ silentNoLink: true, silentSuccess: true });
+  toast(synced ? `Saved "${name}" and synced to Claude` : `Saved "${name}"`);
   renderAll();
 }
-function deleteSavedPreset(key) {
+async function deleteSavedPreset(key) {
   const saved = loadSavedPresets();
   delete saved[key];
   writeSavedPresets(saved);
-  toast('Deleted');
+  const synced = await syncSavedPresetsToClaude({ silentNoLink: true, silentSuccess: true });
+  toast(synced ? 'Deleted and synced to Claude' : 'Deleted');
 }
 
 function getPresetEntries() {
@@ -2146,6 +2365,19 @@ el.randomizeBtn.onclick = randomize;
 el.loadPresetBtn.onclick = openPresetPicker;
 el.savePresetBtn.onclick = saveCurrentAsPreset;
 el.copyClaudeBtn.onclick = () => { copyClaudeImportCommand(); };
+el.linkClaudeBtn.onclick = async () => {
+  const handle = await ensureClaudeDirHandle({ prompt: true });
+  if (!handle) {
+    await updateClaudeLinkUi();
+    toast('Claude link cancelled');
+    return;
+  }
+  const synced = await syncSavedPresetsToClaude({ silentSuccess: true });
+  toast(synced ? 'Claude linked. Save now shows up in /statusline-preset' : 'Claude linked');
+};
+el.syncClaudeBtn.onclick = async () => {
+  await syncSavedPresetsToClaude({ prompt: true });
+};
 el.shareBtn.onclick = shareUrl;
 el.resetBtn.onclick = () => {
   if (!confirm('Reset playground to defaults? Saved presets are kept.')) return;
@@ -2246,6 +2478,7 @@ function boot() {
     el.zoomSelect.value = state.zoom;
     renderAll();
   }
+  updateClaudeLinkUi();
 }
 boot();
 </script>

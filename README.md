@@ -21,9 +21,10 @@ Most people do not need to hand-edit the hook. The normal flow is:
    bash ~/.statusline/install.sh --yes
    ```
 
-2. Open the playground, tune a preset, then click **Claude**.
-3. Paste the copied `/statusline-preset import ...` command into Claude Code once.
-4. After that, just run:
+2. Open the playground and click **Link Claude** once.
+3. Pick your `~/.claude` folder when the browser asks.
+4. Tune a preset and hit **Save**.
+5. After that, just run:
 
    ```bash
    /statusline-preset       # list available built-in + imported presets
@@ -32,8 +33,8 @@ Most people do not need to hand-edit the hook. The normal flow is:
 
 Important:
 
-- **Save** in the playground is browser-only (`localStorage`).
-- A preset shows up in `/statusline-preset` only after you import it into Claude.
+- **Save** in the playground is browser-only until you link Claude.
+- If your browser cannot link local files directly, use **Import** as the fallback.
 
 ## What's different
 
@@ -52,8 +53,9 @@ Important:
   transform (UPPER / lower / Title), caption, custom separator-before,
   alignment (center / left / right), max width with middle-ellipsis truncation.
 - **Playground.** A single HTML file with live preview, 8+ presets, 9 terminal
-  themes, undo/redo, URL-sharing, localStorage presets, a `Claude` export
-  button that copies `/statusline-preset import ...`, and a "copy prompt"
+  themes, undo/redo, URL-sharing, browser-saved presets, a one-time `Link
+  Claude` flow so normal `Save` shows up in `/statusline-preset`, an `Import`
+  fallback that copies `/statusline-preset import ...`, and a "copy prompt"
   button that emits a natural-language instruction for Claude Code to rewrite
   your hook.
 
@@ -174,41 +176,46 @@ xdg-open ~/.statusline/playground/index.html
 
 - Pick a preset, or start from `My defaults ★` and edit from there.
 - Hit **Load** to reopen presets saved in this browser.
+- Hit **Link Claude** once to pick your `~/.claude` folder. After that, normal
+  **Save** syncs browser presets into Claude so `/statusline-preset` can see
+  them directly.
 - Click "more…" on any segment to expand advanced styling (italic, bg color,
   truecolor hex, icon, bracket, case, sep-before, caption, max width).
 - Hit **🔗 Share** to copy a URL with your full state embedded; hand the URL
   to anyone who has the playground HTML and their playground loads your exact
   setup.
-- Hit **💾 Save** to stash a custom preset in browser `localStorage`. This is
-  playground-only.
-- Hit **Claude** to copy a `/statusline-preset import ...` command for the
-  current layout, then paste that command into Claude Code once to import and
-  activate the preset under `~/.claude`.
-- After that first import, use `/statusline-preset` to list presets or
-  `/statusline-preset NAME` to switch instantly.
+- Hit **💾 Save** to stash a custom preset in browser `localStorage`. If Claude
+  is linked, the same save also syncs into `~/.claude/statusline-presets.json`.
+- Use `/statusline-preset` to list presets or `/statusline-preset NAME` to
+  switch instantly inside Claude Code.
+- Hit **Import** only if you want the fallback `/statusline-preset import ...`
+  command instead of direct Claude syncing.
 - Hit **Copy** only if you explicitly want a natural-language prompt that asks
   Claude Code to rewrite the hook file itself.
 
-The preset/import workflow above is the current source of truth.
+The linked-save workflow above is the current source of truth.
 [`docs/STATUSLINE.md`](docs/STATUSLINE.md) is lower-level renderer background.
 
 ## Share your statusline
 
-Six paths, ranked by recipient friction:
+Seven paths, ranked by recipient friction:
 
 1. **URL share** — playground → 🔗 Share → send the URL. Recipient has the
    playground HTML → pastes URL → loads your setup verbatim.
-2. **Claude import command** — playground → **Claude** → send them the
+2. **Linked save** — playground → **Link Claude** once → later **Save**.
+   Claude can then list and switch those presets directly with
+   `/statusline-preset NAME`.
+3. **Import command** — playground → **Import** → send them the
    `/statusline-preset import ...` command. They paste once, then use
    `/statusline-preset NAME` after that.
-3. **Send playground HTML + URL** — email/Slack them `playground/index.html`
+4. **Send playground HTML + URL** — email/Slack them `playground/index.html`
    plus the share URL. Fully offline.
-4. **Copy the prompt** — playground → switch output to "Prompt" → Copy → paste
+5. **Copy the prompt** — playground → switch output to "Prompt" → Copy → paste
    into their Claude Code session. Claude rewrites their hook. Zero tooling
    needed on their end.
-5. **Send the JSON config** — playground → output "JSON" → Copy. A raw config
+6. **Send the JSON config** — playground → output "JSON" → Copy. A raw config
    artifact.
-6. **Send the hook file** — `hook/statusline.js` directly. Most accurate, most
+7. **Send the hook file** — `hook/statusline.js` directly. Most accurate, most
    invasive.
 
 ## Segments available
@@ -244,7 +251,7 @@ data simply skips (no empty slot, no dangling separator):
 | ------------------------------------- | ---------------------------------------- |
 | `~/.claude/hooks/statusline.js`       | Installed live hook                      |
 | `~/.claude/hooks/gsd-statusline.js`   | Alternate live hook path used by many setups |
-| `~/.claude/statusline-presets.json`   | Imported presets from `/statusline-preset import` |
+| `~/.claude/statusline-presets.json`   | Linked playground saves + imported custom presets |
 | `~/.claude/.statusline-active-preset` | Active preset name the hook renders      |
 | `~/.claude/skills/statusline-preset/` | Slash-command wiring for preset switching |
 | `~/.claude/settings.json`             | Wires Claude Code to run the hook        |
