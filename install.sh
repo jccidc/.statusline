@@ -44,6 +44,40 @@ confirm() {
   [[ -z "$reply" || "$reply" =~ ^[Yy]$ ]]
 }
 
+write_statusline_settings() {
+  local settings_path="$1"
+  local statusline_cmd="$2"
+  node - "$settings_path" "$statusline_cmd" <<'NODE'
+const fs = require('fs');
+
+const [settingsPath, command] = process.argv.slice(2);
+let data = {};
+
+if (fs.existsSync(settingsPath)) {
+  const raw = fs.readFileSync(settingsPath, 'utf8').replace(/^\uFEFF/, '');
+  if (raw.trim()) {
+    data = JSON.parse(raw);
+  }
+}
+
+if (!data || typeof data !== 'object' || Array.isArray(data)) {
+  data = {};
+}
+
+const current = data.statusLine && typeof data.statusLine === 'object' && !Array.isArray(data.statusLine)
+  ? data.statusLine
+  : {};
+
+data.statusLine = {
+  ...current,
+  type: 'command',
+  command
+};
+
+fs.writeFileSync(settingsPath, JSON.stringify(data, null, 2) + '\n', 'utf8');
+NODE
+}
+
 backup_file() {
   local target="$1"
   if [ ! -f "$target" ]; then return 0; fi
@@ -77,6 +111,11 @@ for required in "$HOOK_SRC" "$COMMON_SRC" "$SCRIPT_SRC" "$SKILL_SRC"; do
   fi
 done
 
+if ! command -v node >/dev/null 2>&1; then
+  echo "node is required to install .statusline" >&2
+  exit 1
+fi
+
 mkdir -p "$CLAUDE_DIR/hooks" "$CLAUDE_DIR/statusline" "$SKILL_DEST_DIR"
 
 backup_file "$HOOK_DEST"
@@ -103,28 +142,13 @@ if [ -f "$SETTINGS" ]; then
     echo "If you want to point it at this hook, edit $SETTINGS so statusLine.command = $cmd"
   else
     if confirm "Add statusLine block to $SETTINGS?"; then
-      python3 - "$SETTINGS" "$cmd" <<'PY'
-import json, sys
-path, cmd = sys.argv[1], sys.argv[2]
-with open(path, 'r', encoding='utf-8') as f:
-    data = json.load(f)
-data.setdefault('statusLine', {'type': 'command', 'command': cmd})
-with open(path, 'w', encoding='utf-8') as f:
-    json.dump(data, f, indent=2)
-PY
+      write_statusline_settings "$SETTINGS" "$cmd"
       echo "Updated settings.json."
     fi
   fi
 else
   if confirm "No $SETTINGS found. Create one with statusLine wired up?"; then
-    cat > "$SETTINGS" <<EOF
-{
-  "statusLine": {
-    "type": "command",
-    "command": "$cmd"
-  }
-}
-EOF
+    write_statusline_settings "$SETTINGS" "$cmd"
     echo "Created $SETTINGS."
   fi
 fi
