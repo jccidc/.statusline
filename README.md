@@ -28,8 +28,7 @@ Most people do not need to hand-edit the hook. The normal flow is:
 
    ```bash
    /statusline-preset       # show numbered saved presets
-   /statusline-preset 2     # load preset #2
-   /statusline-preset all   # show built-ins too
+   Simply type the corresponding number of the preset you want and press enter.
    ```
 
 Important:

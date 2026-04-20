@@ -334,6 +334,60 @@ function readEnforcerState(enforcerRoot, homeDir) {
   return { label: '', progress: '' };
 }
 
+function readLedgerProgress(ledgerPath) {
+  const ledger = fs.readFileSync(ledgerPath, 'utf8');
+  const scoreboard = ledger.match(/(\d+)\s+total\s*\|\s*(\d+)\s+done\s*\|\s*(\d+)\s+verified(?:\s*\|\s*(\d+)\s+skipped)?/i);
+  let done = 0;
+  let total = 0;
+  if (scoreboard) {
+    total = parseInt(scoreboard[1], 10);
+    done = parseInt(scoreboard[2], 10) + parseInt(scoreboard[3], 10) + (scoreboard[4] ? parseInt(scoreboard[4], 10) : 0);
+  } else {
+    const rows = ledger.split('\n').filter(line => /^\|\s*T\d+\s*\|/.test(line));
+    total = rows.length;
+    done = rows.filter(line => /\|\s*(done|verified|skipped)\s*\|/i.test(line)).length;
+  }
+  if (total > 0) {
+    const progress = `${done}/${total}`;
+    return { label: progress, progress };
+  }
+  return { label: '', progress: '' };
+}
+
+function findLedgerPath(startDir, homeResolved) {
+  try {
+    let current = path.resolve(startDir);
+    for (let i = 0; i < 12; i++) {
+      if (current === homeResolved) break;
+      const candidate = path.join(current, '.plan-enforcer', 'ledger.md');
+      if (fs.existsSync(candidate)) return candidate;
+      const parent = path.dirname(current);
+      if (parent === current) break;
+      current = parent;
+    }
+  } catch (error) {
+    // Ignore walk-up failures.
+  }
+  try {
+    const entries = fs.readdirSync(startDir, { withFileTypes: true });
+    let best = null;
+    for (const entry of entries) {
+      if (!entry.isDirectory() || entry.name.startsWith('.')) continue;
+      const candidate = path.join(startDir, entry.name, '.plan-enforcer', 'ledger.md');
+      try {
+        const stat = fs.statSync(candidate);
+        if (!best || stat.mtimeMs > best.mtime) best = { path: candidate, mtime: stat.mtimeMs };
+      } catch (error) {
+        // No ledger in this child.
+      }
+    }
+    if (best) return best.path;
+  } catch (error) {
+    // Ignore readdir failures.
+  }
+  return null;
+}
+
 // Read JSON from stdin.
 let input = '';
 const stdinTimeout = setTimeout(() => process.exit(0), 3000);
@@ -416,11 +470,26 @@ process.stdin.on('end', () => {
       ? (findEnforcerRoot(dir, homeResolved) || foundRoot)
       : null;
     const suppressChainedEnforcer = process.env.PLAN_ENFORCER_STATUSLINE_CHAINED === '1';
-    const enforcerState = suppressChainedEnforcer
-      ? { label: '', progress: '' }
-      : readEnforcerState(enforcerRoot, homeDir);
-    const enforcerLabel = enforcerState.label;
-    const enforcerProgress = enforcerState.progress;
+    let enforcerLabel = '';
+    let enforcerProgress = '';
+    if (!suppressChainedEnforcer && wants('enforcer', 'enforcerprog')) {
+      const enforcerState = readEnforcerState(enforcerRoot, homeDir);
+      enforcerLabel = enforcerState.label;
+      enforcerProgress = enforcerState.progress;
+
+      if (!enforcerLabel) {
+        try {
+          const ledgerPath = findLedgerPath(dir, homeResolved);
+          if (ledgerPath) {
+            const progressState = readLedgerProgress(ledgerPath);
+            enforcerLabel = progressState.label;
+            enforcerProgress = progressState.progress;
+          }
+        } catch (error) {
+          // Ignore.
+        }
+      }
+    }
 
     const gitCachePath = path.join(os.tmpdir(), 'claude-statusline-git-cache.json');
     let gitCache = null;
