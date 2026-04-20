@@ -238,6 +238,102 @@ function formatDuration(ms) {
   return `${minutes}m`;
 }
 
+function findGitRoot(startDir, homeResolved) {
+  try {
+    let current = path.resolve(startDir);
+    for (let i = 0; i < 12; i++) {
+      if (fs.existsSync(path.join(current, '.git'))) return current;
+      if (current === homeResolved) break;
+      const parent = path.dirname(current);
+      if (parent === current) break;
+      current = parent;
+    }
+  } catch (error) {
+    // Ignore.
+  }
+  return null;
+}
+
+function findEnforcerRoot(startDir, homeResolved) {
+  try {
+    let current = path.resolve(startDir);
+    for (let i = 0; i < 12; i++) {
+      if (fs.existsSync(path.join(current, '.plan-enforcer'))) return current;
+      if (current === homeResolved) break;
+      const parent = path.dirname(current);
+      if (parent === current) break;
+      current = parent;
+    }
+  } catch (error) {
+    // Ignore.
+  }
+  return null;
+}
+
+function readEnforcerState(enforcerRoot, homeDir) {
+  if (!enforcerRoot) return { label: '', progress: '' };
+
+  try {
+    const enforcerDir = path.join(enforcerRoot, '.plan-enforcer');
+    const statePath = path.join(enforcerDir, 'statusline-state.json');
+    const ledgerPath = path.join(enforcerDir, 'ledger.md');
+    const discussPath = path.join(enforcerDir, 'discuss.md');
+    const legacyDiscussPath = path.join(enforcerDir, 'combobulate.md');
+
+    if (fs.existsSync(statePath)) {
+      const parsed = JSON.parse(fs.readFileSync(statePath, 'utf8'));
+      const label = String(parsed?.label || '').trim();
+      if (label) {
+        return {
+          label,
+          progress: /^\d+\/\d+$/.test(label) ? label : ''
+        };
+      }
+    }
+
+    if (fs.existsSync(ledgerPath)) {
+      const ledger = fs.readFileSync(ledgerPath, 'utf8');
+      const scoreboard = ledger.match(/(\d+)\s+total\s*\|\s*(\d+)\s+done\s*\|\s*(\d+)\s+verified(?:\s*\|\s*(\d+)\s+skipped)?/i);
+      let done = 0;
+      let total = 0;
+      if (scoreboard) {
+        total = parseInt(scoreboard[1], 10);
+        done = parseInt(scoreboard[2], 10) + parseInt(scoreboard[3], 10) + (scoreboard[4] ? parseInt(scoreboard[4], 10) : 0);
+      } else {
+        const rows = ledger.split('\n').filter(line => /^\|\s*T\d+\s*\|/.test(line));
+        total = rows.length;
+        done = rows.filter(line => /\|\s*(done|verified|skipped)\s*\|/i.test(line)).length;
+      }
+      if (total > 0) {
+        const progress = `${done}/${total}`;
+        return { label: progress, progress };
+      }
+    }
+
+    if (fs.existsSync(discussPath) || fs.existsSync(legacyDiscussPath)) {
+      return { label: '1-DISCUSS', progress: '' };
+    }
+  } catch (error) {
+    // Ignore.
+  }
+
+  try {
+    const previewFlag = path.join(homeDir, '.claude', '.enforcer-preview');
+    if (fs.existsSync(previewFlag)) {
+      const raw = fs.readFileSync(previewFlag, 'utf8').trim();
+      const label = raw || '3/7';
+      return {
+        label,
+        progress: /^\d+\/\d+$/.test(label) ? label : ''
+      };
+    }
+  } catch (error) {
+    // Ignore.
+  }
+
+  return { label: '', progress: '' };
+}
+
 // Read JSON from stdin.
 let input = '';
 const stdinTimeout = setTimeout(() => process.exit(0), 3000);
@@ -312,59 +408,19 @@ process.stdin.on('end', () => {
 
     let foundRoot = null;
     if (wants('enforcer', 'enforcerprog', 'repo', 'branch', 'commitage', 'aheadbehind', 'dirty', 'untracked')) {
-      try {
-        let current = path.resolve(dir);
-        for (let i = 0; i < 12; i++) {
-          if (fs.existsSync(path.join(current, '.git'))) {
-            foundRoot = current;
-            break;
-          }
-          if (current === homeResolved) break;
-          const parent = path.dirname(current);
-          if (parent === current) break;
-          current = parent;
-        }
-        if (foundRoot === homeResolved) foundRoot = null;
-      } catch (error) {
-        // Ignore.
-      }
+      foundRoot = findGitRoot(dir, homeResolved);
+      if (foundRoot === homeResolved) foundRoot = null;
     }
 
-    let enforcerProgress = '';
-    if (wants('enforcer', 'enforcerprog') && foundRoot) {
-      try {
-        const ledgerPath = path.join(foundRoot, '.plan-enforcer', 'ledger.md');
-        if (fs.existsSync(ledgerPath)) {
-          const ledger = fs.readFileSync(ledgerPath, 'utf8');
-          const scoreboard = ledger.match(/(\d+)\s+total\s*\|\s*(\d+)\s+done\s*\|\s*(\d+)\s+verified(?:\s*\|\s*(\d+)\s+skipped)?/i);
-          let done = 0;
-          let total = 0;
-          if (scoreboard) {
-            total = parseInt(scoreboard[1], 10);
-            done = parseInt(scoreboard[2], 10) + parseInt(scoreboard[3], 10) + (scoreboard[4] ? parseInt(scoreboard[4], 10) : 0);
-          } else {
-            const rows = ledger.split('\n').filter(line => /^\|\s*T\d+\s*\|/.test(line));
-            total = rows.length;
-            done = rows.filter(line => /\|\s*(done|verified|skipped)\s*\|/i.test(line)).length;
-          }
-          if (total > 0) enforcerProgress = `${done}/${total}`;
-        }
-      } catch (error) {
-        // Ignore.
-      }
-    }
-
-    if (wants('enforcer', 'enforcerprog') && !enforcerProgress) {
-      try {
-        const previewFlag = path.join(homeDir, '.claude', '.enforcer-preview');
-        if (fs.existsSync(previewFlag)) {
-          const raw = fs.readFileSync(previewFlag, 'utf8').trim();
-          enforcerProgress = raw || '3/7';
-        }
-      } catch (error) {
-        // Ignore.
-      }
-    }
+    const enforcerRoot = wants('enforcer', 'enforcerprog')
+      ? (findEnforcerRoot(dir, homeResolved) || foundRoot)
+      : null;
+    const suppressChainedEnforcer = process.env.PLAN_ENFORCER_STATUSLINE_CHAINED === '1';
+    const enforcerState = suppressChainedEnforcer
+      ? { label: '', progress: '' }
+      : readEnforcerState(enforcerRoot, homeDir);
+    const enforcerLabel = enforcerState.label;
+    const enforcerProgress = enforcerState.progress;
 
     const gitCachePath = path.join(os.tmpdir(), 'claude-statusline-git-cache.json');
     let gitCache = null;
@@ -677,7 +733,7 @@ process.stdin.on('end', () => {
 
     const runtimeMap = {
       caveman: { show: cavemanActive, text: '[CAVEMAN]' },
-      enforcer: { show: !!enforcerProgress, text: `[ENFORCER:${enforcerProgress}]` },
+      enforcer: { show: !!enforcerLabel, text: `[ENFORCER: ${String(enforcerLabel).toUpperCase()}]` },
       branch: { show: !!branch, text: branch },
       aheadbehind: { show: !!aheadBehind, text: aheadBehind, align: 'left' },
       dirty: { show: !!dirty, text: dirty },
@@ -692,7 +748,7 @@ process.stdin.on('end', () => {
       session: { show: !!sessionDurationText, text: sessionDurationText, align: 'left' },
       node: { show: true, text: nodeText, align: 'left' },
       todos: { show: todosPending > 0, text: `${todosPending} todo`, align: 'left' },
-      enforcerprog: { show: !!enforcerProgress, text: `${enforcerProgress} tasks`, align: 'left' },
+      enforcerprog: { show: !!enforcerProgress, text: enforcerProgress, align: 'left' },
       cost: { show: !!(sessionStats && sessionStats.cost > 0), text: formatCost(sessionStats?.cost || 0), align: 'left' },
       context: { show: !!ctxText, text: ctxText, colorCode: ctxColorCode, align: 'left' },
       tokens: { show: !!(sessionStats && sessionStats.tokens > 0), text: formatTokens(sessionStats?.tokens || 0), align: 'left' },
@@ -714,7 +770,7 @@ process.stdin.on('end', () => {
     // Fallback: old hardcoded layout if the shared preset helper is missing.
     const legacySegments = [];
     legacySegments.push({ text: `[${String(model).toUpperCase()}]`, codes: '2;38;5;208', caption: 'model', sepBefore: null });
-    if (enforcerProgress) legacySegments.push({ text: `[ENFORCER:${enforcerProgress}]`, codes: '1;94', caption: 'enforcer', sepBefore: null });
+    if (enforcerLabel) legacySegments.push({ text: `[ENFORCER: ${String(enforcerLabel).toUpperCase()}]`, codes: '1;94', caption: 'enforcer', sepBefore: null });
     if (cavemanActive) legacySegments.push({ text: '[CAVEMAN]', codes: '1;93', caption: 'caveman', sepBefore: null });
     legacySegments.push({ text: '\ud83d\udcc2 ' + path.basename(dir), codes: '2;97', caption: 'dir', sepBefore: null });
     if (foundRoot) legacySegments.push({ text: '\ud83d\udcdf ' + path.basename(foundRoot), codes: '31', caption: 'repo', sepBefore: ' \u2502 ' });
