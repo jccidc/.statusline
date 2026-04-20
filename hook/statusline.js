@@ -330,11 +330,45 @@ process.stdin.on('end', () => {
       }
     }
 
-    let enforcerProgress = '';
-    if (wants('enforcer', 'enforcerprog') && foundRoot) {
+    function findLedgerPath(startDir) {
       try {
-        const ledgerPath = path.join(foundRoot, '.plan-enforcer', 'ledger.md');
-        if (fs.existsSync(ledgerPath)) {
+        let current = path.resolve(startDir);
+        for (let i = 0; i < 12; i++) {
+          if (current === homeResolved) break;
+          const candidate = path.join(current, '.plan-enforcer', 'ledger.md');
+          if (fs.existsSync(candidate)) return candidate;
+          const parent = path.dirname(current);
+          if (parent === current) break;
+          current = parent;
+        }
+      } catch (error) {
+        // Ignore walk-up failures.
+      }
+      try {
+        const entries = fs.readdirSync(startDir, { withFileTypes: true });
+        let best = null;
+        for (const entry of entries) {
+          if (!entry.isDirectory() || entry.name.startsWith('.')) continue;
+          const candidate = path.join(startDir, entry.name, '.plan-enforcer', 'ledger.md');
+          try {
+            const stat = fs.statSync(candidate);
+            if (!best || stat.mtimeMs > best.mtime) best = { path: candidate, mtime: stat.mtimeMs };
+          } catch (error) {
+            // No ledger in this child.
+          }
+        }
+        if (best) return best.path;
+      } catch (error) {
+        // Ignore readdir failures.
+      }
+      return null;
+    }
+
+    let enforcerProgress = '';
+    if (wants('enforcer', 'enforcerprog')) {
+      try {
+        const ledgerPath = findLedgerPath(dir);
+        if (ledgerPath) {
           const ledger = fs.readFileSync(ledgerPath, 'utf8');
           const scoreboard = ledger.match(/(\d+)\s+total\s*\|\s*(\d+)\s+done\s*\|\s*(\d+)\s+verified(?:\s*\|\s*(\d+)\s+skipped)?/i);
           let done = 0;
