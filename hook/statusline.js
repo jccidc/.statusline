@@ -346,6 +346,22 @@ function readEnforcerState(enforcerRoot, homeDir, sessionId, transcriptPath) {
   return { label: '', progress: '' };
 }
 
+function readEnforcerBridge(sessionId, transcriptPath) {
+  try {
+    const bridgePath = path.join(os.tmpdir(), 'plan-enforcer-statusline-session.json');
+    if (!fs.existsSync(bridgePath)) return null;
+    const bridge = JSON.parse(fs.readFileSync(bridgePath, 'utf8'));
+    const expectedSession = String(sessionId || '').trim();
+    const expectedTranscript = String(transcriptPath || '').trim();
+    if (expectedSession && bridge.sessionId && String(bridge.sessionId).trim() !== expectedSession) return null;
+    if (expectedTranscript && bridge.transcriptPath && String(bridge.transcriptPath).trim() !== expectedTranscript) return null;
+    const bridgedRoot = String(bridge.projectRoot || '').trim();
+    return bridgedRoot ? bridgedRoot : null;
+  } catch (error) {
+    return null;
+  }
+}
+
 function readLedgerProgress(ledgerPath) {
   const ledger = fs.readFileSync(ledgerPath, 'utf8');
   const scoreboard = ledger.match(/(\d+)\s+total\s*\|\s*(\d+)\s+done\s*\|\s*(\d+)\s+verified(?:\s*\|\s*(\d+)\s+skipped)?/i);
@@ -485,12 +501,23 @@ process.stdin.on('end', () => {
     let enforcerLabel = '';
     let enforcerProgress = '';
     if (!suppressChainedEnforcer && wants('enforcer', 'enforcerprog')) {
-      const enforcerState = readEnforcerState(
+      let enforcerState = readEnforcerState(
         enforcerRoot,
         homeDir,
         session,
         data.transcript_path || ''
       );
+      if (!enforcerState.label) {
+        const bridgedRoot = readEnforcerBridge(session, data.transcript_path || '');
+        if (bridgedRoot && path.resolve(bridgedRoot) !== path.resolve(enforcerRoot || '')) {
+          enforcerState = readEnforcerState(
+            bridgedRoot,
+            homeDir,
+            session,
+            data.transcript_path || ''
+          );
+        }
+      }
       enforcerLabel = enforcerState.label;
       enforcerProgress = enforcerState.progress;
 
