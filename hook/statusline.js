@@ -260,8 +260,8 @@ function findEnforcerRoot(startDir, homeResolved) {
   try {
     let current = path.resolve(startDir);
     for (let i = 0; i < 12; i++) {
-      if (fs.existsSync(path.join(current, '.plan-enforcer'))) return current;
       if (current === homeResolved) break;
+      if (fs.existsSync(path.join(current, '.plan-enforcer'))) return current;
       const parent = path.dirname(current);
       if (parent === current) break;
       current = parent;
@@ -272,20 +272,34 @@ function findEnforcerRoot(startDir, homeResolved) {
   return null;
 }
 
-function readEnforcerState(enforcerRoot, homeDir) {
+function stateMatchesSession(state, sessionId, transcriptPath) {
+  const expectedSession = String(sessionId || '').trim();
+  const stateSession = String(state?.sessionId || '').trim();
+  if (expectedSession && stateSession && stateSession !== expectedSession) {
+    return false;
+  }
+
+  const expectedTranscript = String(transcriptPath || '').trim();
+  const stateTranscript = String(state?.transcriptPath || '').trim();
+  if (expectedTranscript && stateTranscript && stateTranscript !== expectedTranscript) {
+    return false;
+  }
+
+  return true;
+}
+
+function readEnforcerState(enforcerRoot, homeDir, sessionId, transcriptPath) {
   if (!enforcerRoot) return { label: '', progress: '' };
 
   try {
     const enforcerDir = path.join(enforcerRoot, '.plan-enforcer');
     const statePath = path.join(enforcerDir, 'statusline-state.json');
     const ledgerPath = path.join(enforcerDir, 'ledger.md');
-    const discussPath = path.join(enforcerDir, 'discuss.md');
-    const legacyDiscussPath = path.join(enforcerDir, 'combobulate.md');
 
     if (fs.existsSync(statePath)) {
       const parsed = JSON.parse(fs.readFileSync(statePath, 'utf8'));
       const label = String(parsed?.label || '').trim();
-      if (label) {
+      if (label && stateMatchesSession(parsed, sessionId, transcriptPath)) {
         return {
           label,
           progress: /^\d+\/\d+$/.test(label) ? label : ''
@@ -310,10 +324,6 @@ function readEnforcerState(enforcerRoot, homeDir) {
         const progress = `${done}/${total}`;
         return { label: progress, progress };
       }
-    }
-
-    if (fs.existsSync(discussPath) || fs.existsSync(legacyDiscussPath)) {
-      return { label: '1-DISCUSS', progress: '' };
     }
   } catch (error) {
     // Ignore.
@@ -475,7 +485,12 @@ process.stdin.on('end', () => {
     let enforcerLabel = '';
     let enforcerProgress = '';
     if (!suppressChainedEnforcer && wants('enforcer', 'enforcerprog')) {
-      const enforcerState = readEnforcerState(enforcerRoot, homeDir);
+      const enforcerState = readEnforcerState(
+        enforcerRoot,
+        homeDir,
+        session,
+        data.transcript_path || ''
+      );
       enforcerLabel = enforcerState.label;
       enforcerProgress = enforcerState.progress;
 
