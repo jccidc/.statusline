@@ -191,6 +191,7 @@ function renderConfiguredStatusline(snapshot, runtimeMap) {
       text,
       codes: buildSegmentCodes(segment, baseSegment, runtime, presetCommon.ANSI_COLORS),
       caption: segment.caption || '',
+      captionAlign: segment.captionAlign || 'left',
       align: runtime.align || 'center',
       sepBefore: segment.sepBefore || '',
     });
@@ -216,9 +217,10 @@ function renderConfiguredStatusline(snapshot, runtimeMap) {
   for (let i = 0; i < activeSegments.length; i++) {
     const width = visibleLen(activeSegments[i].text);
     const caption = activeSegments[i].caption || '';
-    if (activeSegments[i].align === 'left') line2 += caption.padEnd(width).slice(0, width);
-    else if (activeSegments[i].align === 'right') line2 += caption.padStart(width).slice(-width);
-    else line2 += centerPad(caption, width);
+    const capAlign = activeSegments[i].captionAlign || 'left';
+    if (capAlign === 'right') line2 += caption.padStart(width).slice(-width);
+    else if (capAlign === 'center') line2 += centerPad(caption, width);
+    else line2 += caption.padEnd(width).slice(0, width);
     if (i < activeSegments.length - 1) {
       const literal = activeSegments[i + 1].sepBefore || separator;
       line2 += ' '.repeat(visibleLen(literal));

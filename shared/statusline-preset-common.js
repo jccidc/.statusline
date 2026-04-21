@@ -94,6 +94,7 @@ function hydrateSegment(segment) {
     caseTransform: 'none',
     sepBefore: '',
     caption: '',
+    captionAlign: 'left',
   }, segment);
 }
 

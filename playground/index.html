@@ -808,6 +808,7 @@ function hydrateSegment(s) {
     caseTransform: 'none',   // 'none' | 'upper' | 'lower' | 'title'
     sepBefore: '',           // '' = use global default; else this literal separator
     caption: '',             // '' = no caption rendered underneath; else this string below segment
+    captionAlign: 'left',    // 'left' | 'center' | 'right' - caption positioning within segment width
   }, s);
 }
 function applyCase(text, mode) {
@@ -1768,6 +1769,25 @@ function buildExpandedRow(seg) {
   g.appendChild(mkLabel('Caption'));
   g.appendChild(capInp);
 
+  // Caption align (independent of segment text alignment)
+  const capAlignWrap = document.createElement('div');
+  capAlignWrap.style.display = 'flex'; capAlignWrap.style.gap = '4px';
+  const capAlignSel = document.createElement('select');
+  [['left', 'Left'], ['center', 'Center'], ['right', 'Right']].forEach(([v, l]) => {
+    const o = document.createElement('option');
+    o.value = v; o.textContent = l;
+    if ((seg.captionAlign || 'left') === v) o.selected = true;
+    capAlignSel.appendChild(o);
+  });
+  capAlignSel.onchange = () => {
+    pushHistory();
+    seg.captionAlign = capAlignSel.value;
+    renderAll();
+  };
+  capAlignWrap.appendChild(capAlignSel);
+  g.appendChild(mkLabel('Caption align'));
+  g.appendChild(capAlignWrap);
+
   // Text override
   const toInp = document.createElement('input');
   toInp.type = 'text';
@@ -1861,6 +1881,7 @@ function renderPreview() {
     if (isSegSpan) {
       const seg = activeSegs[segIdx++];
       cell.textContent = seg.caption || '';
+      cell.style.textAlign = seg.captionAlign || 'left';
     } else {
       cell.textContent = '';
     }
@@ -1946,7 +1967,13 @@ function buildAnsiString() {
       const segText = textForSegment(seg);
       const w = visibleLen(segText);
       const cap = (seg.caption || '').slice(0, w);
-      line2 += cap.padEnd(w);
+      const ca = seg.captionAlign || 'left';
+      if (ca === 'right') line2 += cap.padStart(w);
+      else if (ca === 'center') {
+        const pad = w - cap.length;
+        const l = Math.floor(pad / 2);
+        line2 += ' '.repeat(Math.max(0, l)) + cap + ' '.repeat(Math.max(0, pad - l));
+      } else line2 += cap.padEnd(w);
       if (i < active.length - 1) {
         const s = active[i + 1].sepBefore || sep;
         line2 += ' '.repeat(visibleLen(s));
