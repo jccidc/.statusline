@@ -288,6 +288,30 @@ function stateMatchesSession(state, sessionId, transcriptPath) {
   return true;
 }
 
+function isProgressLabel(label) {
+  return /^\d+\/\d+$/.test(String(label || '').trim());
+}
+
+function readLedgerProgress(ledgerPath) {
+  const ledger = fs.readFileSync(ledgerPath, 'utf8');
+  const scoreboard = ledger.match(/(\d+)\s+total\s*\|\s*(\d+)\s+done\s*\|\s*(\d+)\s+verified(?:\s*\|\s*(\d+)\s+skipped)?/i);
+  let done = 0;
+  let total = 0;
+  if (scoreboard) {
+    total = parseInt(scoreboard[1], 10);
+    done = parseInt(scoreboard[2], 10) + parseInt(scoreboard[3], 10) + (scoreboard[4] ? parseInt(scoreboard[4], 10) : 0);
+  } else {
+    const rows = ledger.split('\n').filter(line => /^\|\s*T\d+\s*\|/.test(line));
+    total = rows.length;
+    done = rows.filter(line => /\|\s*(done|verified|skipped)\s*\|/i.test(line)).length;
+  }
+  if (total > 0) {
+    const progress = `${done}/${total}`;
+    return { label: progress, progress };
+  }
+  return { label: '', progress: '' };
+}
+
 function readEnforcerState(enforcerRoot, homeDir, sessionId, transcriptPath) {
   if (!enforcerRoot) return { label: '', progress: '' };
 
@@ -300,30 +324,19 @@ function readEnforcerState(enforcerRoot, homeDir, sessionId, transcriptPath) {
       const parsed = JSON.parse(fs.readFileSync(statePath, 'utf8'));
       const label = String(parsed?.label || '').trim();
       if (label && stateMatchesSession(parsed, sessionId, transcriptPath)) {
+        if ((parsed?.stage === 'tasks' || isProgressLabel(label)) && fs.existsSync(ledgerPath)) {
+          const progressState = readLedgerProgress(ledgerPath);
+          if (progressState.label) return progressState;
+        }
         return {
           label,
-          progress: /^\d+\/\d+$/.test(label) ? label : ''
+          progress: isProgressLabel(label) ? label : ''
         };
       }
     }
 
     if (fs.existsSync(ledgerPath)) {
-      const ledger = fs.readFileSync(ledgerPath, 'utf8');
-      const scoreboard = ledger.match(/(\d+)\s+total\s*\|\s*(\d+)\s+done\s*\|\s*(\d+)\s+verified(?:\s*\|\s*(\d+)\s+skipped)?/i);
-      let done = 0;
-      let total = 0;
-      if (scoreboard) {
-        total = parseInt(scoreboard[1], 10);
-        done = parseInt(scoreboard[2], 10) + parseInt(scoreboard[3], 10) + (scoreboard[4] ? parseInt(scoreboard[4], 10) : 0);
-      } else {
-        const rows = ledger.split('\n').filter(line => /^\|\s*T\d+\s*\|/.test(line));
-        total = rows.length;
-        done = rows.filter(line => /\|\s*(done|verified|skipped)\s*\|/i.test(line)).length;
-      }
-      if (total > 0) {
-        const progress = `${done}/${total}`;
-        return { label: progress, progress };
-      }
+      return readLedgerProgress(ledgerPath);
     }
   } catch (error) {
     // Ignore.
@@ -360,26 +373,6 @@ function readEnforcerBridge(sessionId, transcriptPath) {
   } catch (error) {
     return null;
   }
-}
-
-function readLedgerProgress(ledgerPath) {
-  const ledger = fs.readFileSync(ledgerPath, 'utf8');
-  const scoreboard = ledger.match(/(\d+)\s+total\s*\|\s*(\d+)\s+done\s*\|\s*(\d+)\s+verified(?:\s*\|\s*(\d+)\s+skipped)?/i);
-  let done = 0;
-  let total = 0;
-  if (scoreboard) {
-    total = parseInt(scoreboard[1], 10);
-    done = parseInt(scoreboard[2], 10) + parseInt(scoreboard[3], 10) + (scoreboard[4] ? parseInt(scoreboard[4], 10) : 0);
-  } else {
-    const rows = ledger.split('\n').filter(line => /^\|\s*T\d+\s*\|/.test(line));
-    total = rows.length;
-    done = rows.filter(line => /\|\s*(done|verified|skipped)\s*\|/i.test(line)).length;
-  }
-  if (total > 0) {
-    const progress = `${done}/${total}`;
-    return { label: progress, progress };
-  }
-  return { label: '', progress: '' };
 }
 
 function findLedgerPath(startDir, homeResolved) {
