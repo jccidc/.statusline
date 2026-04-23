@@ -238,6 +238,32 @@ function formatDuration(ms) {
   return `${minutes}m`;
 }
 
+function normalizeEnforcerLabel(value) {
+  return String(value || '').trim();
+}
+
+function ensureChainedEnforcerSlot(snapshot, label) {
+  if (!snapshot || !label || !Array.isArray(snapshot.enabled)) return snapshot;
+  if (snapshot.enabled.includes('enforcer')) return snapshot;
+
+  const enabled = snapshot.enabled.slice();
+  const modelIndex = enabled.indexOf('model');
+  if (modelIndex >= 0) enabled.splice(modelIndex + 1, 0, 'enforcer');
+  else enabled.unshift('enforcer');
+
+  return {
+    ...snapshot,
+    enabled,
+    overrides: {
+      ...(snapshot.overrides || {}),
+      enforcer: {
+        caption: 'enforcer',
+        ...((snapshot.overrides && snapshot.overrides.enforcer) || {})
+      }
+    }
+  };
+}
+
 // Read JSON from stdin.
 let input = '';
 const stdinTimeout = setTimeout(() => process.exit(0), 3000);
@@ -275,7 +301,13 @@ process.stdin.on('end', () => {
     const homeDir = os.homedir();
     const homeResolved = path.resolve(homeDir);
     const claudeDir = process.env.CLAUDE_CONFIG_DIR || path.join(homeDir, '.claude');
-    const snapshot = loadPresetSnapshot(claudeDir);
+    const chainedEnforcer = process.env.PLAN_ENFORCER_STATUSLINE_CHAINED === '1';
+    const chainedEnforcerLabel = normalizeEnforcerLabel(process.env.PLAN_ENFORCER_STATUSLINE_LABEL);
+    const chainedEnforcerProgress = normalizeEnforcerLabel(process.env.PLAN_ENFORCER_STATUSLINE_PROGRESS);
+    const snapshot = ensureChainedEnforcerSlot(
+      loadPresetSnapshot(claudeDir),
+      chainedEnforcerLabel
+    );
     const requestedIds = new Set();
     if (snapshot?.enabled) {
       for (const id of snapshot.enabled) {
@@ -364,8 +396,12 @@ process.stdin.on('end', () => {
       return null;
     }
 
+    let enforcerLabel = '';
     let enforcerProgress = '';
-    if (wants('enforcer', 'enforcerprog')) {
+    if (chainedEnforcer) {
+      enforcerLabel = chainedEnforcerLabel;
+      enforcerProgress = chainedEnforcerProgress;
+    } else if (wants('enforcer', 'enforcerprog')) {
       try {
         const ledgerPath = findLedgerPath(dir);
         if (ledgerPath) {
@@ -381,19 +417,23 @@ process.stdin.on('end', () => {
             total = rows.length;
             done = rows.filter(line => /\|\s*(done|verified|skipped)\s*\|/i.test(line)).length;
           }
-          if (total > 0) enforcerProgress = `${done}/${total}`;
+          if (total > 0) {
+            enforcerProgress = `${done}/${total}`;
+            enforcerLabel = enforcerProgress;
+          }
         }
       } catch (error) {
         // Ignore.
       }
     }
 
-    if (wants('enforcer', 'enforcerprog') && !enforcerProgress) {
+    if (!chainedEnforcer && wants('enforcer', 'enforcerprog') && !enforcerProgress) {
       try {
         const previewFlag = path.join(homeDir, '.claude', '.enforcer-preview');
         if (fs.existsSync(previewFlag)) {
           const raw = fs.readFileSync(previewFlag, 'utf8').trim();
           enforcerProgress = raw || '3/7';
+          enforcerLabel = enforcerProgress;
         }
       } catch (error) {
         // Ignore.
@@ -711,7 +751,7 @@ process.stdin.on('end', () => {
 
     const runtimeMap = {
       caveman: { show: cavemanActive, text: '[CAVEMAN]' },
-      enforcer: { show: !!enforcerProgress, text: `[ENFORCER:${enforcerProgress}]` },
+      enforcer: { show: !!enforcerLabel, text: `[ENFORCER: ${String(enforcerLabel).toUpperCase()}]` },
       branch: { show: !!branch, text: branch },
       aheadbehind: { show: !!aheadBehind, text: aheadBehind, align: 'left' },
       dirty: { show: !!dirty, text: dirty },
@@ -748,7 +788,7 @@ process.stdin.on('end', () => {
     // Fallback: old hardcoded layout if the shared preset helper is missing.
     const legacySegments = [];
     legacySegments.push({ text: `[${String(model).toUpperCase()}]`, codes: '2;38;5;208', caption: 'model', sepBefore: null });
-    if (enforcerProgress) legacySegments.push({ text: `[ENFORCER:${enforcerProgress}]`, codes: '1;94', caption: 'enforcer', sepBefore: null });
+    if (enforcerLabel) legacySegments.push({ text: `[ENFORCER: ${String(enforcerLabel).toUpperCase()}]`, codes: '1;94', caption: 'enforcer', sepBefore: null });
     if (cavemanActive) legacySegments.push({ text: '[CAVEMAN]', codes: '1;93', caption: 'caveman', sepBefore: null });
     legacySegments.push({ text: '\ud83d\udcc2 ' + path.basename(dir), codes: '2;97', caption: 'dir', sepBefore: null });
     if (foundRoot) legacySegments.push({ text: '\ud83d\udcdf ' + path.basename(foundRoot), codes: '31', caption: 'repo', sepBefore: ' \u2502 ' });
