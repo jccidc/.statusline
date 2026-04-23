@@ -38,7 +38,7 @@ const DEFAULT_ACTIVE_PRESET = 'my-defaults';
 
 const ALL_SEGMENTS = [
   { id: 'caveman',      label: 'Caveman badge',         text: '[CAVEMAN]',             color: 'brightYellow', bold: true },
-  { id: 'enforcer',     label: 'Enforcer badge',        text: '[ENFORCER:structural]', color: 'brightBlue', bold: true },
+  { id: 'enforcer',     label: 'Enforcer badge',        text: '[ENFORCER: 1-DISCUSS]', color: 'brightBlue', bold: true },
   { id: 'gsdupdate',    label: 'GSD update',            text: '\u2b06 /gsd-update',    color: 'yellow' },
   { id: 'gsdphase',     label: 'GSD phase',             text: 'phase 72.1',            color: 'brightCyan' },
   { id: 'branch',       label: 'Git branch',            text: 'main',                  color: 'magenta', icon: '\ud83c\udf3f' },
@@ -60,7 +60,7 @@ const ALL_SEGMENTS = [
   { id: 'python',       label: 'Python version',        text: 'py 3.12',               color: 'brightBlue', dim: true },
   { id: 'battery',      label: 'Battery',               text: '82%',                   color: 'brightGreen', icon: '\ud83d\udd0b' },
   { id: 'todos',        label: 'TODO count',            text: '3 todo',                color: 'yellow' },
-  { id: 'enforcerprog', label: 'Enforcer progress',     text: '3/7 tasks',             color: 'brightBlue' },
+  { id: 'enforcerprog', label: 'Enforcer progress',     text: '0/7',                   color: 'brightBlue' },
   { id: 'cost',         label: 'Cost estimate',         text: '$0.42',                 color: 'brightGreen' },
   { id: 'aws',          label: 'AWS profile',           text: 'aws:prod',              color: 'orange' },
   { id: 'kubectl',      label: 'kubectl context',       text: 'k8s:staging',           color: 'brightMagenta' },
@@ -94,6 +94,7 @@ function hydrateSegment(segment) {
     caseTransform: 'none',
     sepBefore: '',
     caption: '',
+    captionAlign: 'left',
   }, segment);
 }
 

@@ -191,6 +191,7 @@ function renderConfiguredStatusline(snapshot, runtimeMap) {
       text,
       codes: buildSegmentCodes(segment, baseSegment, runtime, presetCommon.ANSI_COLORS),
       caption: segment.caption || '',
+      captionAlign: segment.captionAlign || 'left',
       align: runtime.align || 'center',
       sepBefore: segment.sepBefore || '',
     });
@@ -216,9 +217,10 @@ function renderConfiguredStatusline(snapshot, runtimeMap) {
   for (let i = 0; i < activeSegments.length; i++) {
     const width = visibleLen(activeSegments[i].text);
     const caption = activeSegments[i].caption || '';
-    if (activeSegments[i].align === 'left') line2 += caption.padEnd(width).slice(0, width);
-    else if (activeSegments[i].align === 'right') line2 += caption.padStart(width).slice(-width);
-    else line2 += centerPad(caption, width);
+    const capAlign = activeSegments[i].captionAlign || 'left';
+    if (capAlign === 'right') line2 += caption.padStart(width).slice(-width);
+    else if (capAlign === 'center') line2 += centerPad(caption, width);
+    else line2 += caption.padEnd(width).slice(0, width);
     if (i < activeSegments.length - 1) {
       const literal = activeSegments[i + 1].sepBefore || separator;
       line2 += ' '.repeat(visibleLen(literal));
@@ -262,6 +264,175 @@ function ensureChainedEnforcerSlot(snapshot, label) {
       }
     }
   };
+}
+
+function findGitRoot(startDir, homeResolved) {
+  try {
+    let current = path.resolve(startDir);
+    for (let i = 0; i < 12; i++) {
+      if (fs.existsSync(path.join(current, '.git'))) return current;
+      if (current === homeResolved) break;
+      const parent = path.dirname(current);
+      if (parent === current) break;
+      current = parent;
+    }
+  } catch (error) {
+    // Ignore.
+  }
+  return null;
+}
+
+function findEnforcerRoot(startDir, homeResolved) {
+  try {
+    let current = path.resolve(startDir);
+    for (let i = 0; i < 12; i++) {
+      if (current === homeResolved) break;
+      if (fs.existsSync(path.join(current, '.plan-enforcer'))) return current;
+      const parent = path.dirname(current);
+      if (parent === current) break;
+      current = parent;
+    }
+  } catch (error) {
+    // Ignore.
+  }
+  return null;
+}
+
+function stateMatchesSession(state, sessionId, transcriptPath) {
+  const expectedSession = String(sessionId || '').trim();
+  const stateSession = String(state?.sessionId || '').trim();
+  if (expectedSession && stateSession && stateSession !== expectedSession) {
+    return false;
+  }
+
+  const expectedTranscript = String(transcriptPath || '').trim();
+  const stateTranscript = String(state?.transcriptPath || '').trim();
+  if (expectedTranscript && stateTranscript && stateTranscript !== expectedTranscript) {
+    return false;
+  }
+
+  return true;
+}
+
+function isProgressLabel(label) {
+  return /^\d+\/\d+$/.test(String(label || '').trim());
+}
+
+function readLedgerProgress(ledgerPath) {
+  const ledger = fs.readFileSync(ledgerPath, 'utf8');
+  const scoreboard = ledger.match(/(\d+)\s+total\s*\|\s*(\d+)\s+done\s*\|\s*(\d+)\s+verified(?:\s*\|\s*(\d+)\s+skipped)?/i);
+  let done = 0;
+  let total = 0;
+  if (scoreboard) {
+    total = parseInt(scoreboard[1], 10);
+    done = parseInt(scoreboard[2], 10) + parseInt(scoreboard[3], 10) + (scoreboard[4] ? parseInt(scoreboard[4], 10) : 0);
+  } else {
+    const rows = ledger.split('\n').filter(line => /^\|\s*T\d+\s*\|/.test(line));
+    total = rows.length;
+    done = rows.filter(line => /\|\s*(done|verified|skipped)\s*\|/i.test(line)).length;
+  }
+  if (total > 0) {
+    const progress = `${done}/${total}`;
+    return { label: progress, progress };
+  }
+  return { label: '', progress: '' };
+}
+
+function readEnforcerState(enforcerRoot, homeDir, sessionId, transcriptPath) {
+  if (!enforcerRoot) return { label: '', progress: '' };
+
+  try {
+    const enforcerDir = path.join(enforcerRoot, '.plan-enforcer');
+    const statePath = path.join(enforcerDir, 'statusline-state.json');
+    const ledgerPath = path.join(enforcerDir, 'ledger.md');
+
+    if (fs.existsSync(statePath)) {
+      const parsed = JSON.parse(fs.readFileSync(statePath, 'utf8'));
+      const label = String(parsed?.label || '').trim();
+      if (label && stateMatchesSession(parsed, sessionId, transcriptPath)) {
+        if ((parsed?.stage === 'tasks' || isProgressLabel(label)) && fs.existsSync(ledgerPath)) {
+          const progressState = readLedgerProgress(ledgerPath);
+          if (progressState.label) return progressState;
+        }
+        return {
+          label,
+          progress: isProgressLabel(label) ? label : ''
+        };
+      }
+    }
+
+    if (fs.existsSync(ledgerPath)) {
+      return readLedgerProgress(ledgerPath);
+    }
+  } catch (error) {
+    // Ignore.
+  }
+
+  try {
+    const previewFlag = path.join(homeDir, '.claude', '.enforcer-preview');
+    if (fs.existsSync(previewFlag)) {
+      const raw = fs.readFileSync(previewFlag, 'utf8').trim();
+      const label = raw || '3/7';
+      return {
+        label,
+        progress: /^\d+\/\d+$/.test(label) ? label : ''
+      };
+    }
+  } catch (error) {
+    // Ignore.
+  }
+
+  return { label: '', progress: '' };
+}
+
+function readEnforcerBridge(sessionId, transcriptPath) {
+  try {
+    const bridgePath = path.join(os.tmpdir(), 'plan-enforcer-statusline-session.json');
+    if (!fs.existsSync(bridgePath)) return null;
+    const bridge = JSON.parse(fs.readFileSync(bridgePath, 'utf8'));
+    const expectedSession = String(sessionId || '').trim();
+    const expectedTranscript = String(transcriptPath || '').trim();
+    if (expectedSession && bridge.sessionId && String(bridge.sessionId).trim() !== expectedSession) return null;
+    if (expectedTranscript && bridge.transcriptPath && String(bridge.transcriptPath).trim() !== expectedTranscript) return null;
+    const bridgedRoot = String(bridge.projectRoot || '').trim();
+    return bridgedRoot ? bridgedRoot : null;
+  } catch (error) {
+    return null;
+  }
+}
+
+function findLedgerPath(startDir, homeResolved) {
+  try {
+    let current = path.resolve(startDir);
+    for (let i = 0; i < 12; i++) {
+      if (current === homeResolved) break;
+      const candidate = path.join(current, '.plan-enforcer', 'ledger.md');
+      if (fs.existsSync(candidate)) return candidate;
+      const parent = path.dirname(current);
+      if (parent === current) break;
+      current = parent;
+    }
+  } catch (error) {
+    // Ignore walk-up failures.
+  }
+  try {
+    const entries = fs.readdirSync(startDir, { withFileTypes: true });
+    let best = null;
+    for (const entry of entries) {
+      if (!entry.isDirectory() || entry.name.startsWith('.')) continue;
+      const candidate = path.join(startDir, entry.name, '.plan-enforcer', 'ledger.md');
+      try {
+        const stat = fs.statSync(candidate);
+        if (!best || stat.mtimeMs > best.mtime) best = { path: candidate, mtime: stat.mtimeMs };
+      } catch (error) {
+        // No ledger in this child.
+      }
+    }
+    if (best) return best.path;
+  } catch (error) {
+    // Ignore readdir failures.
+  }
+  return null;
 }
 
 // Read JSON from stdin.
@@ -344,99 +515,50 @@ process.stdin.on('end', () => {
 
     let foundRoot = null;
     if (wants('enforcer', 'enforcerprog', 'repo', 'branch', 'commitage', 'aheadbehind', 'dirty', 'untracked')) {
-      try {
-        let current = path.resolve(dir);
-        for (let i = 0; i < 12; i++) {
-          if (fs.existsSync(path.join(current, '.git'))) {
-            foundRoot = current;
-            break;
-          }
-          if (current === homeResolved) break;
-          const parent = path.dirname(current);
-          if (parent === current) break;
-          current = parent;
-        }
-        if (foundRoot === homeResolved) foundRoot = null;
-      } catch (error) {
-        // Ignore.
-      }
+      foundRoot = findGitRoot(dir, homeResolved);
+      if (foundRoot === homeResolved) foundRoot = null;
     }
 
-    function findLedgerPath(startDir) {
-      try {
-        let current = path.resolve(startDir);
-        for (let i = 0; i < 12; i++) {
-          if (current === homeResolved) break;
-          const candidate = path.join(current, '.plan-enforcer', 'ledger.md');
-          if (fs.existsSync(candidate)) return candidate;
-          const parent = path.dirname(current);
-          if (parent === current) break;
-          current = parent;
-        }
-      } catch (error) {
-        // Ignore walk-up failures.
-      }
-      try {
-        const entries = fs.readdirSync(startDir, { withFileTypes: true });
-        let best = null;
-        for (const entry of entries) {
-          if (!entry.isDirectory() || entry.name.startsWith('.')) continue;
-          const candidate = path.join(startDir, entry.name, '.plan-enforcer', 'ledger.md');
-          try {
-            const stat = fs.statSync(candidate);
-            if (!best || stat.mtimeMs > best.mtime) best = { path: candidate, mtime: stat.mtimeMs };
-          } catch (error) {
-            // No ledger in this child.
-          }
-        }
-        if (best) return best.path;
-      } catch (error) {
-        // Ignore readdir failures.
-      }
-      return null;
-    }
-
+    const enforcerRoot = wants('enforcer', 'enforcerprog')
+      ? (findEnforcerRoot(dir, homeResolved) || foundRoot)
+      : null;
     let enforcerLabel = '';
     let enforcerProgress = '';
     if (chainedEnforcer) {
       enforcerLabel = chainedEnforcerLabel;
       enforcerProgress = chainedEnforcerProgress;
     } else if (wants('enforcer', 'enforcerprog')) {
-      try {
-        const ledgerPath = findLedgerPath(dir);
-        if (ledgerPath) {
-          const ledger = fs.readFileSync(ledgerPath, 'utf8');
-          const scoreboard = ledger.match(/(\d+)\s+total\s*\|\s*(\d+)\s+done\s*\|\s*(\d+)\s+verified(?:\s*\|\s*(\d+)\s+skipped)?/i);
-          let done = 0;
-          let total = 0;
-          if (scoreboard) {
-            total = parseInt(scoreboard[1], 10);
-            done = parseInt(scoreboard[2], 10) + parseInt(scoreboard[3], 10) + (scoreboard[4] ? parseInt(scoreboard[4], 10) : 0);
-          } else {
-            const rows = ledger.split('\n').filter(line => /^\|\s*T\d+\s*\|/.test(line));
-            total = rows.length;
-            done = rows.filter(line => /\|\s*(done|verified|skipped)\s*\|/i.test(line)).length;
-          }
-          if (total > 0) {
-            enforcerProgress = `${done}/${total}`;
-            enforcerLabel = enforcerProgress;
-          }
+      let enforcerState = readEnforcerState(
+        enforcerRoot,
+        homeDir,
+        session,
+        data.transcript_path || ''
+      );
+      if (!enforcerState.label) {
+        const bridgedRoot = readEnforcerBridge(session, data.transcript_path || '');
+        if (bridgedRoot && path.resolve(bridgedRoot) !== path.resolve(enforcerRoot || '')) {
+          enforcerState = readEnforcerState(
+            bridgedRoot,
+            homeDir,
+            session,
+            data.transcript_path || ''
+          );
         }
-      } catch (error) {
-        // Ignore.
       }
-    }
+      enforcerLabel = enforcerState.label;
+      enforcerProgress = enforcerState.progress;
 
-    if (!chainedEnforcer && wants('enforcer', 'enforcerprog') && !enforcerProgress) {
-      try {
-        const previewFlag = path.join(homeDir, '.claude', '.enforcer-preview');
-        if (fs.existsSync(previewFlag)) {
-          const raw = fs.readFileSync(previewFlag, 'utf8').trim();
-          enforcerProgress = raw || '3/7';
-          enforcerLabel = enforcerProgress;
+      if (!enforcerLabel) {
+        try {
+          const ledgerPath = findLedgerPath(dir, homeResolved);
+          if (ledgerPath) {
+            const progressState = readLedgerProgress(ledgerPath);
+            enforcerLabel = progressState.label;
+            enforcerProgress = progressState.progress;
+          }
+        } catch (error) {
+          // Ignore.
         }
-      } catch (error) {
-        // Ignore.
       }
     }
 
@@ -766,7 +888,7 @@ process.stdin.on('end', () => {
       session: { show: !!sessionDurationText, text: sessionDurationText, align: 'left' },
       node: { show: true, text: nodeText, align: 'left' },
       todos: { show: todosPending > 0, text: `${todosPending} todo`, align: 'left' },
-      enforcerprog: { show: !!enforcerProgress, text: `${enforcerProgress} tasks`, align: 'left' },
+      enforcerprog: { show: !!enforcerProgress, text: enforcerProgress, align: 'left' },
       cost: { show: !!(sessionStats && sessionStats.cost > 0), text: formatCost(sessionStats?.cost || 0), align: 'left' },
       context: { show: !!ctxText, text: ctxText, colorCode: ctxColorCode, align: 'left' },
       tokens: { show: !!(sessionStats && sessionStats.tokens > 0), text: formatTokens(sessionStats?.tokens || 0), align: 'left' },

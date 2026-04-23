@@ -757,7 +757,7 @@ const BRACKETS = {
  * ============================================================ */
 const ALL_SEGMENTS = [
   { id: 'caveman',        label: 'Caveman badge',    text: '[CAVEMAN]',              color: 'brightYellow', bold: true  },
-  { id: 'enforcer',       label: 'Enforcer badge',   text: '[ENFORCER:structural]',  color: 'brightBlue',   bold: true  },
+  { id: 'enforcer',       label: 'Enforcer badge',   text: '[ENFORCER: 1-DISCUSS]',  color: 'brightBlue',   bold: true  },
   { id: 'gsdupdate',      label: 'GSD update',       text: '⬆ /gsd-update',          color: 'yellow' },
   { id: 'gsdphase',       label: 'GSD phase',        text: 'phase 72.1',             color: 'brightCyan' },
   { id: 'branch',         label: 'Git branch',       text: 'main',                   color: 'magenta', icon: '🌿' },
@@ -779,7 +779,7 @@ const ALL_SEGMENTS = [
   { id: 'python',         label: 'Python version',   text: 'py 3.12',                color: 'brightBlue', dim: true },
   { id: 'battery',        label: 'Battery',          text: '82%',                    color: 'brightGreen', icon: '🔋' },
   { id: 'todos',          label: 'TODO count',       text: '3 todo',                 color: 'yellow' },
-  { id: 'enforcerprog',   label: 'Enforcer progress',text: '3/7 tasks',              color: 'brightBlue' },
+  { id: 'enforcerprog',   label: 'Enforcer progress',text: '0/7',                    color: 'brightBlue' },
   { id: 'cost',           label: 'Cost estimate',    text: '$0.42',                  color: 'brightGreen' },
   { id: 'aws',            label: 'AWS profile',      text: 'aws:prod',               color: 'orange' },
   { id: 'kubectl',        label: 'kubectl context',  text: 'k8s:staging',            color: 'brightMagenta' },
@@ -808,6 +808,7 @@ function hydrateSegment(s) {
     caseTransform: 'none',   // 'none' | 'upper' | 'lower' | 'title'
     sepBefore: '',           // '' = use global default; else this literal separator
     caption: '',             // '' = no caption rendered underneath; else this string below segment
+    captionAlign: 'left',    // 'left' | 'center' | 'right' - caption positioning within segment width
   }, s);
 }
 function applyCase(text, mode) {
@@ -1177,10 +1178,11 @@ async function saveClaudePresetStore(dirHandle, store) {
 
 async function ensureClaudeDirHandle(options = {}) {
   const promptUser = !!options.prompt;
+  const forcePick = !!options.forcePick;
   if (!supportsClaudeSync()) return null;
 
-  let handle = await getStoredClaudeDirHandle();
-  if (!handle && promptUser) {
+  let handle = forcePick ? null : await getStoredClaudeDirHandle();
+  if (promptUser && (forcePick || !handle)) {
     try {
       handle = await window.showDirectoryPicker({ id: 'claude-config-dir', mode: 'readwrite' });
       await setStoredClaudeDirHandle(handle);
@@ -1767,6 +1769,25 @@ function buildExpandedRow(seg) {
   g.appendChild(mkLabel('Caption'));
   g.appendChild(capInp);
 
+  // Caption align (independent of segment text alignment)
+  const capAlignWrap = document.createElement('div');
+  capAlignWrap.style.display = 'flex'; capAlignWrap.style.gap = '4px';
+  const capAlignSel = document.createElement('select');
+  [['left', 'Left'], ['center', 'Center'], ['right', 'Right']].forEach(([v, l]) => {
+    const o = document.createElement('option');
+    o.value = v; o.textContent = l;
+    if ((seg.captionAlign || 'left') === v) o.selected = true;
+    capAlignSel.appendChild(o);
+  });
+  capAlignSel.onchange = () => {
+    pushHistory();
+    seg.captionAlign = capAlignSel.value;
+    renderAll();
+  };
+  capAlignWrap.appendChild(capAlignSel);
+  g.appendChild(mkLabel('Caption align'));
+  g.appendChild(capAlignWrap);
+
   // Text override
   const toInp = document.createElement('input');
   toInp.type = 'text';
@@ -1860,6 +1881,7 @@ function renderPreview() {
     if (isSegSpan) {
       const seg = activeSegs[segIdx++];
       cell.textContent = seg.caption || '';
+      cell.style.textAlign = seg.captionAlign || 'left';
     } else {
       cell.textContent = '';
     }
@@ -1945,7 +1967,13 @@ function buildAnsiString() {
       const segText = textForSegment(seg);
       const w = visibleLen(segText);
       const cap = (seg.caption || '').slice(0, w);
-      line2 += cap.padEnd(w);
+      const ca = seg.captionAlign || 'left';
+      if (ca === 'right') line2 += cap.padStart(w);
+      else if (ca === 'center') {
+        const pad = w - cap.length;
+        const l = Math.floor(pad / 2);
+        line2 += ' '.repeat(Math.max(0, l)) + cap + ' '.repeat(Math.max(0, pad - l));
+      } else line2 += cap.padEnd(w);
       if (i < active.length - 1) {
         const s = active[i + 1].sepBefore || sep;
         line2 += ' '.repeat(visibleLen(s));
@@ -2027,7 +2055,7 @@ ${ansi}
 Requirements:
 - Each segment is detected independently in the script. If its condition is not met at runtime, skip it (no empty slots, no dangling separator).
 - Preserve existing safety guards: outer try/catch on all I/O, cap filesystem walk-ups, stop at \$HOME.
-- Keep the caveman flag-file detection (\`~/.claude/.caveman-active\`) and the enforcer walk-up (nearest \`.git\` with \`.plan-enforcer/ledger.md\`) unchanged.
+- Keep the caveman flag-file detection (\`~/.claude/.caveman-active\`) unchanged. For Plan Enforcer, prefer session-matching named stages from \`.plan-enforcer/statusline-state.json\`, but if that state is numeric task progress like \`4/23\` let the live \`.plan-enforcer/ledger.md\` progress win so stale cached counts never stick. Do not revive ENFORCER from stale packet files alone, do not treat a home-level \`.plan-enforcer/\` as the current project, and when a PE wrapper chains into this hook let the native enforcer segment render so preset captions stay aligned.
 - Never probe Anthropic APIs, read OAuth credentials, or scrape \`/usage\` from the statusline. If Claude Code already provides a field on stdin, use that field directly.
 ${wantsBlock ? '- For the 5-hour quota segment, read `data.rate_limits?.five_hour.used_percentage` and `data.rate_limits?.five_hour.resets_at` from the statusline JSON on stdin. Hide the segment entirely when `rate_limits.five_hour` is absent.' : ''}
 ${wantsWeekly ? '- For the weekly quota segment, read `data.rate_limits?.seven_day.used_percentage` and `data.rate_limits?.seven_day.resets_at` from the statusline JSON on stdin. Hide the segment entirely when `rate_limits.seven_day` is absent.' : ''}
@@ -2398,7 +2426,7 @@ el.loadPresetBtn.onclick = openPresetPicker;
 el.savePresetBtn.onclick = saveCurrentAsPreset;
 el.copyClaudeBtn.onclick = () => { copyClaudeImportCommand(); };
 async function handleLinkClaudeClick() {
-  const handle = await ensureClaudeDirHandle({ prompt: true });
+  const handle = await ensureClaudeDirHandle({ prompt: true, forcePick: true });
   if (!handle) {
     await updateClaudeLinkUi();
     toast('Claude link cancelled');
