@@ -45,6 +45,67 @@ function runHook(cwd, snapshot, extraEnv = {}) {
   return result;
 }
 
+describe('statusline hook diffstat segment', () => {
+  function initGitRepo(cwd) {
+    const env = {
+      ...process.env,
+      GIT_AUTHOR_NAME: 'Test',
+      GIT_AUTHOR_EMAIL: 'test@example.com',
+      GIT_COMMITTER_NAME: 'Test',
+      GIT_COMMITTER_EMAIL: 'test@example.com'
+    };
+    spawnSync('git', ['init', '-q', '-b', 'main'], { cwd, env });
+    fs.writeFileSync(path.join(cwd, 'seed.txt'), 'seed\n');
+    spawnSync('git', ['add', 'seed.txt'], { cwd, env });
+    spawnSync('git', ['commit', '-q', '-m', 'seed'], { cwd, env });
+  }
+
+  it('renders combined +added ~modified -deleted counts', () => {
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'statusline-diffstat-'));
+    initGitRepo(cwd);
+    fs.writeFileSync(path.join(cwd, 'seed.txt'), 'changed\n');
+    fs.writeFileSync(path.join(cwd, 'new-file.txt'), 'new\n');
+
+    const result = runHook(cwd, {
+      enabled: ['model', 'diffstat'],
+      separator: ' | ',
+      sepColor: 'gray',
+      sepBold: false,
+      sepDim: false,
+      showCaptions: false,
+      overrides: {
+        model: { bracket: 'square', caseTransform: 'upper', color: 'orange' },
+        diffstat: { caption: 'diff' }
+      }
+    });
+
+    const clean = result.stdout.replace(/\x1B\[[0-9;]*m/g, '');
+    assert.equal(result.status, 0);
+    assert.match(clean, /\+1 ~1/);
+  });
+
+  it('hides diffstat segment when working tree is clean', () => {
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'statusline-diffstat-clean-'));
+    initGitRepo(cwd);
+
+    const result = runHook(cwd, {
+      enabled: ['model', 'diffstat'],
+      separator: ' | ',
+      sepColor: 'gray',
+      sepBold: false,
+      sepDim: false,
+      showCaptions: false,
+      overrides: {
+        model: { bracket: 'square', caseTransform: 'upper', color: 'orange' }
+      }
+    });
+
+    const clean = result.stdout.replace(/\x1B\[[0-9;]*m/g, '');
+    assert.equal(result.status, 0);
+    assert.doesNotMatch(clean, /[+~-]\d/);
+  });
+});
+
 describe('statusline hook chained enforcer integration', () => {
   it('renders the chained enforcer label in the configured slot after model', () => {
     const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'statusline-cwd-'));
