@@ -747,6 +747,20 @@ process.stdin.on('end', () => {
       return { text, colorCode };
     }
 
+    function formatRateLimitBar(limit) {
+      if (!limit || !Number.isFinite(limit.used_percentage)) return null;
+      const pct = Math.max(0, Math.min(100, Math.round(limit.used_percentage)));
+      const filled = Math.floor(pct / 10);
+      const bar = '█'.repeat(filled) + '░'.repeat(10 - filled);
+      const reset = formatResetCountdown(limit.resets_at);
+      const text = `${bar} ${pct}%${reset ? ` (${reset})` : ''}`;
+      let colorCode = '32';
+      if (pct >= 80) colorCode = '5;31';
+      else if (pct >= 65) colorCode = '38;5;208';
+      else if (pct >= 50) colorCode = '33';
+      return { text, colorCode };
+    }
+
     let sessionStats = null;
     if (wants('cost', 'tokens', 'sessTokens', 'sessCost', 'cacheHit', 'session') && session) {
       const projectDir = path.join(claudeDir, 'projects', sanitizeCwd(dir));
@@ -824,6 +838,8 @@ process.stdin.on('end', () => {
 
     const blockLimit = formatRateLimit(data.rate_limits?.five_hour, '\u25D4');
     const weeklyLimit = formatRateLimit(data.rate_limits?.seven_day, '\u25D1');
+    const blockLimitBar = formatRateLimitBar(data.rate_limits?.five_hour);
+    const weeklyLimitBar = formatRateLimitBar(data.rate_limits?.seven_day);
 
     let aheadBehind = '';
     let dirty = '';
@@ -916,7 +932,9 @@ process.stdin.on('end', () => {
       context: { show: !!ctxText, text: ctxText, colorCode: ctxColorCode, align: 'left' },
       tokens: { show: !!(sessionStats && sessionStats.tokens > 0), text: formatTokens(sessionStats?.tokens || 0), align: 'left' },
       block: { show: !!blockLimit, text: blockLimit?.text || '', colorCode: blockLimit?.colorCode || '', align: 'left' },
+      blockBar: { show: !!blockLimitBar, text: blockLimitBar?.text || '', colorCode: blockLimitBar?.colorCode || '', align: 'left' },
       weekly: { show: !!weeklyLimit, text: weeklyLimit?.text || '', colorCode: weeklyLimit?.colorCode || '', align: 'left' },
+      weeklyBar: { show: !!weeklyLimitBar, text: weeklyLimitBar?.text || '', colorCode: weeklyLimitBar?.colorCode || '', align: 'left' },
       sessTokens: { show: !!(sessionStats && sessionStats.tokens > 0), text: formatTokens(sessionStats?.tokens || 0), align: 'left' },
       sessCost: { show: !!(sessionStats && sessionStats.cost > 0), text: formatCost(sessionStats?.cost || 0), align: 'left' },
       cacheHit: { show: !!cacheHitText, text: cacheHitText, align: 'left' },

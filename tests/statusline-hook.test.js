@@ -24,14 +24,15 @@ function mkClaudeDir(snapshot) {
   return { root, claudeDir };
 }
 
-function runHook(cwd, snapshot, extraEnv = {}) {
+function runHook(cwd, snapshot, extraEnv = {}, extraInput = {}) {
   const { root, claudeDir } = mkClaudeDir(snapshot);
   const result = spawnSync(process.execPath, [HOOK], {
     cwd,
     input: JSON.stringify({
       workspace: { current_dir: cwd },
       session_id: 's1',
-      model: { display_name: 'Claude' }
+      model: { display_name: 'Claude' },
+      ...extraInput
     }),
     encoding: 'utf8',
     env: {
@@ -130,6 +131,52 @@ describe('statusline hook chained enforcer integration', () => {
     const clean = result.stdout.replace(/\x1B\[[0-9;]*m/g, '');
     assert.equal(result.status, 0);
     assert.match(clean, /^\[CLAUDE\] \| \[ENFORCER: 1-DISCUSS\] \| /);
+  });
+
+  it('renders blockBar and weeklyBar as progress bars from rate_limits', () => {
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'statusline-ratebar-'));
+    const futureHour = new Date(Date.now() + 4 * 60 * 60 * 1000).toISOString();
+    const futureWeek = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString();
+    const result = runHook(cwd, {
+      enabled: ['model', 'blockBar', 'weeklyBar'],
+      separator: ' | ',
+      sepColor: 'gray',
+      sepBold: false,
+      sepDim: false,
+      showCaptions: false,
+      overrides: {
+        model: { bracket: 'square', caseTransform: 'upper', color: 'orange' }
+      }
+    }, {}, {
+      rate_limits: {
+        five_hour: { used_percentage: 23, resets_at: futureHour },
+        seven_day: { used_percentage: 41, resets_at: futureWeek }
+      }
+    });
+
+    const clean = result.stdout.replace(/\x1B\[[0-9;]*m/g, '');
+    assert.equal(result.status, 0);
+    assert.match(clean, /██░░░░░░░░ 23%/);
+    assert.match(clean, /████░░░░░░ 41%/);
+  });
+
+  it('hides blockBar and weeklyBar segments when rate_limits are absent', () => {
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'statusline-ratebar-empty-'));
+    const result = runHook(cwd, {
+      enabled: ['model', 'blockBar', 'weeklyBar'],
+      separator: ' | ',
+      sepColor: 'gray',
+      sepBold: false,
+      sepDim: false,
+      showCaptions: false,
+      overrides: {
+        model: { bracket: 'square', caseTransform: 'upper', color: 'orange' }
+      }
+    });
+
+    const clean = result.stdout.replace(/\x1B\[[0-9;]*m/g, '');
+    assert.equal(result.status, 0);
+    assert.doesNotMatch(clean, /[█░]/);
   });
 
   it('injects the enforcer slot after model when the preset omits it', () => {
