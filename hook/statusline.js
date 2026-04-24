@@ -514,7 +514,7 @@ process.stdin.on('end', () => {
       : false;
 
     let foundRoot = null;
-    if (wants('enforcer', 'enforcerprog', 'repo', 'branch', 'commitage', 'aheadbehind', 'dirty', 'untracked')) {
+    if (wants('enforcer', 'enforcerprog', 'repo', 'branch', 'commitage', 'aheadbehind', 'dirty', 'untracked', 'diffstat')) {
       foundRoot = findGitRoot(dir, homeResolved);
       if (foundRoot === homeResolved) foundRoot = null;
     }
@@ -828,6 +828,7 @@ process.stdin.on('end', () => {
     let aheadBehind = '';
     let dirty = '';
     let untracked = '';
+    let diffstat = '';
     if (foundRoot) {
       if (wants('aheadbehind')) {
         const counts = tryGit('rev-list --left-right --count HEAD...@{upstream}', foundRoot);
@@ -850,6 +851,27 @@ process.stdin.on('end', () => {
           .split('\n')
           .filter(line => line.startsWith('??'));
         if (untrackedLines.length) untracked = `?${untrackedLines.length}`;
+      }
+      if (wants('diffstat')) {
+        const porcelain = tryGit('status --porcelain --untracked-files=all', foundRoot);
+        if (porcelain) {
+          let added = 0, modified = 0, deleted = 0;
+          for (const line of porcelain.split('\n')) {
+            if (!line) continue;
+            const xy = line.slice(0, 2);
+            if (xy === '??') { added++; continue; }
+            const x = xy[0];
+            const y = xy[1];
+            if (x === 'A' || y === 'A' || x === 'C') added++;
+            else if (x === 'D' || y === 'D') deleted++;
+            else if (x === 'M' || y === 'M' || x === 'R' || x === 'U' || y === 'U') modified++;
+          }
+          const parts = [];
+          if (added) parts.push(`+${added}`);
+          if (modified) parts.push(`~${modified}`);
+          if (deleted) parts.push(`-${deleted}`);
+          if (parts.length) diffstat = parts.join(' ');
+        }
       }
     }
 
@@ -878,6 +900,7 @@ process.stdin.on('end', () => {
       aheadbehind: { show: !!aheadBehind, text: aheadBehind, align: 'left' },
       dirty: { show: !!dirty, text: dirty },
       untracked: { show: !!untracked, text: untracked, align: 'left' },
+      diffstat: { show: !!diffstat, text: diffstat, align: 'left' },
       commitage: { show: !!commitAge, text: commitAge, align: 'left' },
       repo: { show: !!foundRoot, text: path.basename(foundRoot || '') },
       model: { show: true, text: model },
