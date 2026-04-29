@@ -692,7 +692,9 @@ process.stdin.on('end', () => {
 
     function formatResetCountdown(unixSec) {
       if (!Number.isFinite(unixSec)) return '';
-      const totalMinutes = Math.max(0, Math.ceil((unixSec * 1000 - Date.now()) / 60000));
+      const diffMs = unixSec * 1000 - Date.now();
+      if (diffMs <= 0) return '';
+      const totalMinutes = Math.ceil(diffMs / 60000);
       if (totalMinutes < 1) return 'reset soon';
       const days = Math.floor(totalMinutes / (24 * 60));
       const hours = Math.floor((totalMinutes % (24 * 60)) / 60);
