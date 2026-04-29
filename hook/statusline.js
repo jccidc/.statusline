@@ -240,6 +240,32 @@ function formatDuration(ms) {
   return `${minutes}m`;
 }
 
+function normalizeEnforcerLabel(value) {
+  return String(value || '').trim();
+}
+
+function ensureChainedEnforcerSlot(snapshot, label) {
+  if (!snapshot || !label || !Array.isArray(snapshot.enabled)) return snapshot;
+  if (snapshot.enabled.includes('enforcer')) return snapshot;
+
+  const enabled = snapshot.enabled.slice();
+  const modelIndex = enabled.indexOf('model');
+  if (modelIndex >= 0) enabled.splice(modelIndex + 1, 0, 'enforcer');
+  else enabled.unshift('enforcer');
+
+  return {
+    ...snapshot,
+    enabled,
+    overrides: {
+      ...(snapshot.overrides || {}),
+      enforcer: {
+        caption: 'enforcer',
+        ...((snapshot.overrides && snapshot.overrides.enforcer) || {})
+      }
+    }
+  };
+}
+
 function findGitRoot(startDir, homeResolved) {
   try {
     let current = path.resolve(startDir);
@@ -446,7 +472,13 @@ process.stdin.on('end', () => {
     const homeDir = os.homedir();
     const homeResolved = path.resolve(homeDir);
     const claudeDir = process.env.CLAUDE_CONFIG_DIR || path.join(homeDir, '.claude');
-    const snapshot = loadPresetSnapshot(claudeDir);
+    const chainedEnforcer = process.env.PLAN_ENFORCER_STATUSLINE_CHAINED === '1';
+    const chainedEnforcerLabel = normalizeEnforcerLabel(process.env.PLAN_ENFORCER_STATUSLINE_LABEL);
+    const chainedEnforcerProgress = normalizeEnforcerLabel(process.env.PLAN_ENFORCER_STATUSLINE_PROGRESS);
+    const snapshot = ensureChainedEnforcerSlot(
+      loadPresetSnapshot(claudeDir),
+      chainedEnforcerLabel
+    );
     const requestedIds = new Set();
     if (snapshot?.enabled) {
       for (const id of snapshot.enabled) {
@@ -482,7 +514,7 @@ process.stdin.on('end', () => {
       : false;
 
     let foundRoot = null;
-    if (wants('enforcer', 'enforcerprog', 'repo', 'branch', 'commitage', 'aheadbehind', 'dirty', 'untracked')) {
+    if (wants('enforcer', 'enforcerprog', 'repo', 'branch', 'commitage', 'aheadbehind', 'dirty', 'untracked', 'diffstat')) {
       foundRoot = findGitRoot(dir, homeResolved);
       if (foundRoot === homeResolved) foundRoot = null;
     }
@@ -490,10 +522,12 @@ process.stdin.on('end', () => {
     const enforcerRoot = wants('enforcer', 'enforcerprog')
       ? (findEnforcerRoot(dir, homeResolved) || foundRoot)
       : null;
-    const suppressChainedEnforcer = process.env.PLAN_ENFORCER_STATUSLINE_CHAINED === '1';
     let enforcerLabel = '';
     let enforcerProgress = '';
-    if (!suppressChainedEnforcer && wants('enforcer', 'enforcerprog')) {
+    if (chainedEnforcer) {
+      enforcerLabel = chainedEnforcerLabel;
+      enforcerProgress = chainedEnforcerProgress;
+    } else if (wants('enforcer', 'enforcerprog')) {
       let enforcerState = readEnforcerState(
         enforcerRoot,
         homeDir,
@@ -715,6 +749,20 @@ process.stdin.on('end', () => {
       return { text, colorCode };
     }
 
+    function formatRateLimitBar(limit) {
+      if (!limit || !Number.isFinite(limit.used_percentage)) return null;
+      const pct = Math.max(0, Math.min(100, Math.round(limit.used_percentage)));
+      const filled = Math.floor(pct / 10);
+      const bar = '█'.repeat(filled) + '░'.repeat(10 - filled);
+      const reset = formatResetCountdown(limit.resets_at);
+      const text = `${bar} ${pct}%${reset ? ` (${reset})` : ''}`;
+      let colorCode = '32';
+      if (pct >= 80) colorCode = '5;31';
+      else if (pct >= 65) colorCode = '38;5;208';
+      else if (pct >= 50) colorCode = '33';
+      return { text, colorCode };
+    }
+
     let sessionStats = null;
     if (wants('cost', 'tokens', 'sessTokens', 'sessCost', 'cacheHit', 'session') && session) {
       const projectDir = path.join(claudeDir, 'projects', sanitizeCwd(dir));
@@ -792,10 +840,13 @@ process.stdin.on('end', () => {
 
     const blockLimit = formatRateLimit(data.rate_limits?.five_hour, '\u25D4');
     const weeklyLimit = formatRateLimit(data.rate_limits?.seven_day, '\u25D1');
+    const blockLimitBar = formatRateLimitBar(data.rate_limits?.five_hour);
+    const weeklyLimitBar = formatRateLimitBar(data.rate_limits?.seven_day);
 
     let aheadBehind = '';
     let dirty = '';
     let untracked = '';
+    let diffstat = '';
     if (foundRoot) {
       if (wants('aheadbehind')) {
         const counts = tryGit('rev-list --left-right --count HEAD...@{upstream}', foundRoot);
@@ -818,6 +869,27 @@ process.stdin.on('end', () => {
           .split('\n')
           .filter(line => line.startsWith('??'));
         if (untrackedLines.length) untracked = `?${untrackedLines.length}`;
+      }
+      if (wants('diffstat')) {
+        const porcelain = tryGit('status --porcelain --untracked-files=all', foundRoot);
+        if (porcelain) {
+          let added = 0, modified = 0, deleted = 0;
+          for (const line of porcelain.split('\n')) {
+            if (!line) continue;
+            const xy = line.slice(0, 2);
+            if (xy === '??') { added++; continue; }
+            const x = xy[0];
+            const y = xy[1];
+            if (x === 'A' || y === 'A' || x === 'C') added++;
+            else if (x === 'D' || y === 'D') deleted++;
+            else if (x === 'M' || y === 'M' || x === 'R' || x === 'U' || y === 'U') modified++;
+          }
+          const parts = [];
+          if (added) parts.push(`+${added}`);
+          if (modified) parts.push(`~${modified}`);
+          if (deleted) parts.push(`-${deleted}`);
+          if (parts.length) diffstat = parts.join(' ');
+        }
       }
     }
 
@@ -846,6 +918,7 @@ process.stdin.on('end', () => {
       aheadbehind: { show: !!aheadBehind, text: aheadBehind, align: 'left' },
       dirty: { show: !!dirty, text: dirty },
       untracked: { show: !!untracked, text: untracked, align: 'left' },
+      diffstat: { show: !!diffstat, text: diffstat, align: 'left' },
       commitage: { show: !!commitAge, text: commitAge, align: 'left' },
       repo: { show: !!foundRoot, text: path.basename(foundRoot || '') },
       model: { show: true, text: model },
@@ -861,7 +934,9 @@ process.stdin.on('end', () => {
       context: { show: !!ctxText, text: ctxText, colorCode: ctxColorCode, align: 'left' },
       tokens: { show: !!(sessionStats && sessionStats.tokens > 0), text: formatTokens(sessionStats?.tokens || 0), align: 'left' },
       block: { show: !!blockLimit, text: blockLimit?.text || '', colorCode: blockLimit?.colorCode || '', align: 'left' },
+      blockBar: { show: !!blockLimitBar, text: blockLimitBar?.text || '', colorCode: blockLimitBar?.colorCode || '', align: 'left' },
       weekly: { show: !!weeklyLimit, text: weeklyLimit?.text || '', colorCode: weeklyLimit?.colorCode || '', align: 'left' },
+      weeklyBar: { show: !!weeklyLimitBar, text: weeklyLimitBar?.text || '', colorCode: weeklyLimitBar?.colorCode || '', align: 'left' },
       sessTokens: { show: !!(sessionStats && sessionStats.tokens > 0), text: formatTokens(sessionStats?.tokens || 0), align: 'left' },
       sessCost: { show: !!(sessionStats && sessionStats.cost > 0), text: formatCost(sessionStats?.cost || 0), align: 'left' },
       cacheHit: { show: !!cacheHitText, text: cacheHitText, align: 'left' },
