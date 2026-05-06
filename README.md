@@ -230,6 +230,10 @@ data simply skips (no empty slot, no dangling separator):
 | -------------------- | ------------------------------------------------------- |
 | Model                | `data.model.display_name` from stdin                    |
 | Caveman badge        | `~/.claude/.caveman-active` flag                        |
+| RTK badge            | `~/.claude/RTK.md` exists (created by `rtk init -g`)    |
+| Context Mode badge   | `~/.claude/plugins/cache/context-mode/` exists          |
+| CTX reduction %      | `~/.claude/context-mode/sessions/stats-*.json` `reduction_pct` (newest, < 30 min) |
+| CTX $ saved          | `~/.claude/context-mode/sessions/stats-*.json` `dollars_saved_session` (newest, < 30 min) |
 | Enforcer progress    | `.plan-enforcer/ledger.md` scoreboard (walk-up)         |
 | Enforcer preview     | `~/.claude/.enforcer-preview` flag (placeholder)        |
 | GSD update notice    | `~/.cache/gsd/gsd-update-check.json`                    |

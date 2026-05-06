@@ -38,6 +38,10 @@ const DEFAULT_ACTIVE_PRESET = 'my-defaults';
 
 const ALL_SEGMENTS = [
   { id: 'caveman',      label: 'Caveman badge',         text: '[CAVEMAN]',             color: 'brightYellow', bold: true },
+  { id: 'rtk',          label: 'RTK badge',             text: '[RTK]',                 color: 'brightCyan', bold: true },
+  { id: 'ctx',          label: 'Context Mode badge',    text: '[CTX]',                 color: 'brightMagenta', bold: true },
+  { id: 'ctxRatio',     label: 'CTX reduction %',       text: '[CTX 41%↓]',       color: 'brightMagenta', bold: true },
+  { id: 'ctxSaved',     label: 'CTX $ saved (session)', text: '[CTX $0.11]',           color: 'brightMagenta', bold: true },
   { id: 'enforcer',     label: 'Enforcer badge',        text: '[ENFORCER: 1-DISCUSS]', color: 'brightBlue', bold: true },
   { id: 'gsdupdate',    label: 'GSD update',            text: '\u2b06 /gsd-update',    color: 'yellow' },
   { id: 'gsdphase',     label: 'GSD phase',             text: 'phase 72.1',            color: 'brightCyan' },
@@ -212,6 +216,10 @@ const SEGMENT_ALIASES = {
 
 const SUPPORTED_SEGMENT_IDS = new Set([
   'caveman',
+  'rtk',
+  'ctx',
+  'ctxRatio',
+  'ctxSaved',
   'enforcer',
   'branch',
   'aheadbehind',

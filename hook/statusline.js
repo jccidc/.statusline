@@ -435,6 +435,31 @@ function findLedgerPath(startDir, homeResolved) {
   return null;
 }
 
+function readContextModeStats(homeDir) {
+  try {
+    const sessionDir = path.join(homeDir, '.claude', 'context-mode', 'sessions');
+    if (!fs.existsSync(sessionDir)) return null;
+    const entries = fs.readdirSync(sessionDir);
+    let best = null;
+    for (const f of entries) {
+      if (!f.startsWith('stats-') || !f.endsWith('.json')) continue;
+      try {
+        const full = path.join(sessionDir, f);
+        const m = fs.statSync(full).mtimeMs;
+        if (!best || m > best.m) best = { full, m };
+      } catch (error) {
+        // Ignore stat failures on individual files.
+      }
+    }
+    if (!best) return null;
+    if (Date.now() - best.m > 30 * 60 * 1000) return null;
+    const parsed = JSON.parse(fs.readFileSync(best.full, 'utf-8'));
+    return parsed && typeof parsed === 'object' ? parsed : null;
+  } catch (error) {
+    return null;
+  }
+}
+
 function readGsdUpdate(homeDir) {
   try {
     const updatePath = path.join(homeDir, '.cache', 'gsd', 'gsd-update-check.json');
@@ -532,6 +557,24 @@ process.stdin.on('end', () => {
     const cavemanActive = wants('caveman')
       ? fs.existsSync(path.join(homeDir, '.claude', '.caveman-active'))
       : false;
+
+    const rtkActive = wants('rtk')
+      ? fs.existsSync(path.join(homeDir, '.claude', 'RTK.md'))
+      : false;
+
+    const ctxActive = wants('ctx')
+      ? fs.existsSync(path.join(homeDir, '.claude', 'plugins', 'cache', 'context-mode'))
+      : false;
+
+    const ctxStats = wants('ctxRatio', 'ctxSaved')
+      ? readContextModeStats(homeDir)
+      : null;
+    const ctxRatioValue = ctxStats && Number.isFinite(ctxStats.reduction_pct)
+      ? Math.round(ctxStats.reduction_pct)
+      : null;
+    const ctxSavedValue = ctxStats && Number.isFinite(ctxStats.dollars_saved_session)
+      ? ctxStats.dollars_saved_session
+      : null;
 
     const gsdUpdateText = wants('gsdupdate')
       ? readGsdUpdate(homeDir)
@@ -937,6 +980,16 @@ process.stdin.on('end', () => {
 
     const runtimeMap = {
       caveman: { show: cavemanActive, text: '[CAVEMAN]' },
+      rtk: { show: rtkActive, text: '[RTK]' },
+      ctx: { show: ctxActive, text: '[CTX]' },
+      ctxRatio: {
+        show: ctxRatioValue !== null && ctxRatioValue > 0,
+        text: `[CTX ${ctxRatioValue || 0}%↓]`
+      },
+      ctxSaved: {
+        show: ctxSavedValue !== null && ctxSavedValue > 0,
+        text: `[CTX $${(ctxSavedValue || 0).toFixed(2)}]`
+      },
       gsdupdate: { show: !!gsdUpdateText, text: gsdUpdateText },
       enforcer: { show: !!enforcerLabel, text: `[ENFORCER: ${String(enforcerLabel).toUpperCase()}]` },
       branch: { show: !!branch, text: branch },

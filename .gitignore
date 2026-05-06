@@ -19,6 +19,9 @@ build/
 *.local.html
 *.bak
 *.orig
+.claude/settings.local.json
+.plan-enforcer/
+tasks/
 
 # Screenshots dump folder (only explicit ones in docs/ are tracked)
 /screenshots/

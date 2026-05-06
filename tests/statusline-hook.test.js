@@ -76,6 +76,58 @@ describe('statusline hook GSD update segment', () => {
   });
 });
 
+describe('statusline hook RTK and Context Mode segments', () => {
+  it('renders RTK and Context Mode badges from local markers', () => {
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'statusline-ctx-rtk-'));
+    const result = runHook(cwd, {
+      enabled: ['model', 'rtk', 'ctx'],
+      separator: ' | ',
+      sepColor: 'gray',
+      sepBold: false,
+      sepDim: false,
+      showCaptions: false,
+      overrides: {
+        model: { bracket: 'square', caseTransform: 'upper', color: 'orange' }
+      }
+    }, {}, {}, root => {
+      fs.mkdirSync(path.join(root, '.claude', 'plugins', 'cache', 'context-mode'), { recursive: true });
+      fs.writeFileSync(path.join(root, '.claude', 'RTK.md'), '# RTK\n', 'utf8');
+    });
+
+    const clean = result.stdout.replace(/\x1B\[[0-9;]*m/g, '');
+    assert.equal(result.status, 0);
+    assert.match(clean, /\[RTK\]/);
+    assert.match(clean, /\[CTX\]/);
+  });
+
+  it('renders fresh Context Mode reduction and saved-dollar stats', () => {
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'statusline-ctx-stats-'));
+    const result = runHook(cwd, {
+      enabled: ['model', 'ctxRatio', 'ctxSaved'],
+      separator: ' | ',
+      sepColor: 'gray',
+      sepBold: false,
+      sepDim: false,
+      showCaptions: false,
+      overrides: {
+        model: { bracket: 'square', caseTransform: 'upper', color: 'orange' }
+      }
+    }, {}, {}, root => {
+      const statsDir = path.join(root, '.claude', 'context-mode', 'sessions');
+      fs.mkdirSync(statsDir, { recursive: true });
+      fs.writeFileSync(path.join(statsDir, 'stats-test.json'), JSON.stringify({
+        reduction_pct: 41.4,
+        dollars_saved_session: 0.11
+      }), 'utf8');
+    });
+
+    const clean = result.stdout.replace(/\x1B\[[0-9;]*m/g, '');
+    assert.equal(result.status, 0);
+    assert.match(clean, /\[CTX 41%↓\]/);
+    assert.match(clean, /\[CTX \$0\.11\]/);
+  });
+});
+
 describe('statusline hook diffstat segment', () => {
   function initGitRepo(cwd) {
     const env = {

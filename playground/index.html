@@ -757,6 +757,10 @@ const BRACKETS = {
  * ============================================================ */
 const ALL_SEGMENTS = [
   { id: 'caveman',        label: 'Caveman badge',    text: '[CAVEMAN]',              color: 'brightYellow', bold: true  },
+  { id: 'rtk',            label: 'RTK badge',        text: '[RTK]',                  color: 'brightCyan',   bold: true  },
+  { id: 'ctx',            label: 'Context Mode badge', text: '[CTX]',                color: 'brightMagenta',bold: true  },
+  { id: 'ctxRatio',       label: 'CTX reduction %',  text: '[CTX 41%↓]',        color: 'brightMagenta',bold: true  },
+  { id: 'ctxSaved',       label: 'CTX $ saved (session)', text: '[CTX $0.11]',     color: 'brightMagenta',bold: true  },
   { id: 'enforcer',       label: 'Enforcer badge',   text: '[ENFORCER: 1-DISCUSS]',  color: 'brightBlue',   bold: true  },
   { id: 'gsdupdate',      label: 'GSD update',       text: '⬆ /gsd-update',          color: 'yellow' },
   { id: 'gsdphase',       label: 'GSD phase',        text: 'phase 72.1',             color: 'brightCyan' },
@@ -1335,7 +1339,7 @@ function scenarioEnabledSet() {
   const s = new Set(state.enabled);
   state.customSegments.forEach(c => { if (c.enabled) s.add(c.id); });
   if (state.scenario === 'all-off') {
-    ['caveman','enforcer','gsdupdate'].forEach(id => s.delete(id));
+    ['caveman','rtk','ctx','enforcer','gsdupdate'].forEach(id => s.delete(id));
   }
   return s;
 }
