@@ -24,8 +24,9 @@ function mkClaudeDir(snapshot) {
   return { root, claudeDir };
 }
 
-function runHook(cwd, snapshot, extraEnv = {}, extraInput = {}) {
+function runHook(cwd, snapshot, extraEnv = {}, extraInput = {}, prepareHome = null) {
   const { root, claudeDir } = mkClaudeDir(snapshot);
+  if (prepareHome) prepareHome(root, claudeDir);
   const result = spawnSync(process.execPath, [HOOK], {
     cwd,
     input: JSON.stringify({
@@ -45,6 +46,35 @@ function runHook(cwd, snapshot, extraEnv = {}, extraInput = {}) {
   });
   return result;
 }
+
+describe('statusline hook GSD update segment', () => {
+  it('renders update badge from gsd update cache when requested', () => {
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'statusline-gsd-update-'));
+    const result = runHook(cwd, {
+      enabled: ['model', 'gsdupdate'],
+      separator: ' | ',
+      sepColor: 'gray',
+      sepBold: false,
+      sepDim: false,
+      showCaptions: false,
+      overrides: {
+        model: { bracket: 'square', caseTransform: 'upper', color: 'orange' }
+      }
+    }, {}, {}, root => {
+      const cacheDir = path.join(root, '.cache', 'gsd');
+      fs.mkdirSync(cacheDir, { recursive: true });
+      fs.writeFileSync(path.join(cacheDir, 'gsd-update-check.json'), JSON.stringify({
+        update_available: true,
+        installed: '1.34.2',
+        latest: '1.40.0'
+      }), 'utf8');
+    });
+
+    const clean = result.stdout.replace(/\x1B\[[0-9;]*m/g, '');
+    assert.equal(result.status, 0);
+    assert.match(clean, /\/gsd-update 1\.40\.0/);
+  });
+});
 
 describe('statusline hook diffstat segment', () => {
   function initGitRepo(cwd) {

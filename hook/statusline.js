@@ -435,6 +435,26 @@ function findLedgerPath(startDir, homeResolved) {
   return null;
 }
 
+function readGsdUpdate(homeDir) {
+  try {
+    const updatePath = path.join(homeDir, '.cache', 'gsd', 'gsd-update-check.json');
+    if (!fs.existsSync(updatePath)) return null;
+    const parsed = JSON.parse(fs.readFileSync(updatePath, 'utf8'));
+    if (!parsed || typeof parsed !== 'object') return null;
+
+    const latest = typeof parsed.latest === 'string' ? parsed.latest.trim() : '';
+    const installed = typeof parsed.installed === 'string' ? parsed.installed.trim() : '';
+    const updateAvailable = parsed.update_available === true ||
+      parsed.updateAvailable === true ||
+      (!!latest && !!installed && latest !== installed);
+
+    if (!updateAvailable) return null;
+    return latest ? `\u2b06 /gsd-update ${latest}` : '\u2b06 /gsd-update';
+  } catch (error) {
+    return null;
+  }
+}
+
 // Read JSON from stdin.
 let input = '';
 const stdinTimeout = setTimeout(() => process.exit(0), 3000);
@@ -512,6 +532,10 @@ process.stdin.on('end', () => {
     const cavemanActive = wants('caveman')
       ? fs.existsSync(path.join(homeDir, '.claude', '.caveman-active'))
       : false;
+
+    const gsdUpdateText = wants('gsdupdate')
+      ? readGsdUpdate(homeDir)
+      : null;
 
     let foundRoot = null;
     if (wants('enforcer', 'enforcerprog', 'repo', 'branch', 'commitage', 'aheadbehind', 'dirty', 'untracked', 'diffstat')) {
@@ -913,6 +937,7 @@ process.stdin.on('end', () => {
 
     const runtimeMap = {
       caveman: { show: cavemanActive, text: '[CAVEMAN]' },
+      gsdupdate: { show: !!gsdUpdateText, text: gsdUpdateText },
       enforcer: { show: !!enforcerLabel, text: `[ENFORCER: ${String(enforcerLabel).toUpperCase()}]` },
       branch: { show: !!branch, text: branch },
       aheadbehind: { show: !!aheadBehind, text: aheadBehind, align: 'left' },
