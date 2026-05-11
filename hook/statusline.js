@@ -51,6 +51,12 @@ function applyCase(text, mode) {
   return text;
 }
 
+function truncateEnd(text, maxWidth) {
+  if (!maxWidth || text.length <= maxWidth) return text;
+  if (maxWidth < 2) return text.slice(0, maxWidth);
+  return text.slice(0, maxWidth - 1) + '…';
+}
+
 function truncateMiddle(text, maxWidth) {
   if (!maxWidth || text.length <= maxWidth) return text;
   if (maxWidth < 5) return text.slice(0, maxWidth);
@@ -119,7 +125,10 @@ function buildSegmentText(segment, baseSegment, runtime, brackets) {
   const icon = segment.icon ? segment.icon + ' ' : '';
   if (segment.maxWidth) {
     const overhead = visibleLen(bracket.open + icon + bracket.close);
-    raw = truncateMiddle(raw, Math.max(1, segment.maxWidth - overhead));
+    const budget = Math.max(1, segment.maxWidth - overhead);
+    raw = segment.truncateMode === 'end'
+      ? truncateEnd(raw, budget)
+      : truncateMiddle(raw, budget);
   }
   return bracket.open + icon + raw + bracket.close;
 }
