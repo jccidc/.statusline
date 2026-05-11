@@ -114,10 +114,13 @@ function buildSegmentText(segment, baseSegment, runtime, brackets) {
   if (!raw) return '';
 
   raw = applyCase(String(raw), segment.caseTransform);
-  if (segment.maxWidth) raw = truncateMiddle(raw, segment.maxWidth);
 
   const bracket = brackets[segment.bracket] || brackets.none;
   const icon = segment.icon ? segment.icon + ' ' : '';
+  if (segment.maxWidth) {
+    const overhead = visibleLen(bracket.open + icon + bracket.close);
+    raw = truncateMiddle(raw, Math.max(1, segment.maxWidth - overhead));
+  }
   return bracket.open + icon + raw + bracket.close;
 }
 
