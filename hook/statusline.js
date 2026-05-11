@@ -113,6 +113,12 @@ function buildSegmentText(segment, baseSegment, runtime, brackets) {
   else raw = runtime?.text || segment.text || '';
   if (!raw) return '';
 
+  if (segment.stripLeadingSegments > 0 && runtime?.rawPath) {
+    const parts = runtime.rawPath.split(/[/\\]/).filter(Boolean);
+    const stripped = parts.slice(segment.stripLeadingSegments).join(path.sep);
+    if (stripped) raw = stripped;
+  }
+
   raw = applyCase(String(raw), segment.caseTransform);
   if (segment.maxWidth) raw = truncateMiddle(raw, segment.maxWidth);
 
@@ -1053,7 +1059,7 @@ process.stdin.on('end', () => {
       repo: { show: !!foundRoot, text: path.basename(foundRoot || '') },
       model: { show: true, text: model },
       task: { show: !!task, text: task },
-      dir: { show: true, text: path.basename(dir) },
+      dir: { show: true, text: path.basename(dir), rawPath: dir },
       clock: { show: true, text: clockText, align: 'left' },
       date: { show: true, text: dateText, align: 'left' },
       session: { show: !!sessionDurationText, text: sessionDurationText, align: 'left' },
