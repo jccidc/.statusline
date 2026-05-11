@@ -460,6 +460,53 @@ function readContextModeStats(homeDir) {
   }
 }
 
+// Read the current GSD phase for the active project. Walks up from the
+// session cwd looking for `.planning/STATE.md`, parses its YAML
+// frontmatter for `current_phase` / `current_phase_name` / `status`, and
+// falls back to scraping `**Current focus:** Phase X` from the body
+// when frontmatter omits them. Returns null when no STATE.md is found
+// so the segment hides instead of rendering its placeholder.
+function readGsdPhase(cwd) {
+  try {
+    let dir = path.resolve(cwd || process.cwd());
+    let statePath = null;
+    for (let i = 0; i < 12; i++) {
+      const candidate = path.join(dir, '.planning', 'STATE.md');
+      if (fs.existsSync(candidate)) {
+        statePath = candidate;
+        break;
+      }
+      const parent = path.dirname(dir);
+      if (parent === dir) break;
+      dir = parent;
+    }
+    if (!statePath) return null;
+    const content = fs.readFileSync(statePath, 'utf8');
+    const fmMatch = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+    let phaseNum = '';
+    let status = '';
+    if (fmMatch) {
+      const fm = fmMatch[1];
+      const cp = fm.match(/^current_phase:\s*['"]?([^'"\r\n]+?)['"]?\s*$/m);
+      const st = fm.match(/^status:\s*['"]?([^'"\r\n]+?)['"]?\s*$/m);
+      if (cp) phaseNum = cp[1].trim();
+      if (st) status = st[1].trim();
+    }
+    if (!phaseNum) {
+      const focus = content.match(/\*\*Current focus:\*\*\s*Phase\s+([0-9.]+)/i);
+      if (focus) phaseNum = focus[1].trim();
+    }
+    if (!phaseNum) return null;
+    const stripped = phaseNum.replace(/^0+(?=\d)/, '');
+    let label = `Phase ${stripped}`;
+    if (status === 'ready_to_plan') label += ' (plan)';
+    else if (status === 'in_progress') label += ' (exec)';
+    return label;
+  } catch (_e) {
+    return null;
+  }
+}
+
 function readGsdUpdate(homeDir) {
   try {
     const updatePath = path.join(homeDir, '.cache', 'gsd', 'gsd-update-check.json');
@@ -578,6 +625,10 @@ process.stdin.on('end', () => {
 
     const gsdUpdateText = wants('gsdupdate')
       ? readGsdUpdate(homeDir)
+      : null;
+
+    const gsdPhaseText = wants('gsdphase')
+      ? readGsdPhase(dir)
       : null;
 
     let foundRoot = null;
@@ -991,6 +1042,7 @@ process.stdin.on('end', () => {
         text: `[CTX $${(ctxSavedValue || 0).toFixed(2)}]`
       },
       gsdupdate: { show: !!gsdUpdateText, text: gsdUpdateText },
+      gsdphase: { show: !!gsdPhaseText, text: gsdPhaseText },
       enforcer: { show: !!enforcerLabel, text: `[ENFORCER: ${String(enforcerLabel).toUpperCase()}]` },
       branch: { show: !!branch, text: branch },
       aheadbehind: { show: !!aheadBehind, text: aheadBehind, align: 'left' },
