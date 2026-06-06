@@ -527,19 +527,66 @@ function readGsdPhase(cwd) {
 
 function readGsdUpdate(homeDir) {
   try {
-    const updatePath = path.join(homeDir, '.cache', 'gsd', 'gsd-update-check.json');
-    if (!fs.existsSync(updatePath)) return null;
-    const parsed = JSON.parse(fs.readFileSync(updatePath, 'utf8'));
-    if (!parsed || typeof parsed !== 'object') return null;
+    // GSD has used several cache locations and filenames over time:
+    //  - ~/.cache/gsd/gsd-update-check*.json — shared path; newer GSD (gsd-core)
+    //    suffixes the filename with a package slug, e.g.
+    //    gsd-update-check-opengsd-gsd-core.json
+    //  - <configDir>/cache/gsd-update-check.json — classic GSD
+    // Collect all candidates and use the freshest entry so the badge keeps
+    // working across GSD renames.
+    const candidates = [];
+    const sharedDir = path.join(homeDir, '.cache', 'gsd');
+    try {
+      for (const f of fs.readdirSync(sharedDir)) {
+        if (f.startsWith('gsd-update-check') && f.endsWith('.json')) {
+          candidates.push(path.join(sharedDir, f));
+        }
+      }
+    } catch (_e) {
+      // Shared cache dir missing — fall through to legacy locations.
+    }
+    if (process.env.CLAUDE_CONFIG_DIR) {
+      candidates.push(path.join(process.env.CLAUDE_CONFIG_DIR, 'cache', 'gsd-update-check.json'));
+    }
+    candidates.push(path.join(homeDir, '.claude', 'cache', 'gsd-update-check.json'));
+
+    let parsed = null;
+    let bestTime = -1;
+    for (const candidate of candidates) {
+      try {
+        if (!fs.existsSync(candidate)) continue;
+        const entry = JSON.parse(fs.readFileSync(candidate, 'utf8'));
+        if (!entry || typeof entry !== 'object') continue;
+        const checked = typeof entry.checked === 'number'
+          ? entry.checked * 1000
+          : fs.statSync(candidate).mtimeMs;
+        if (checked > bestTime) {
+          bestTime = checked;
+          parsed = entry;
+        }
+      } catch (_e) {
+        // Unreadable candidate — try the next location.
+      }
+    }
+    if (!parsed) return null;
 
     const latest = typeof parsed.latest === 'string' ? parsed.latest.trim() : '';
     const installed = typeof parsed.installed === 'string' ? parsed.installed.trim() : '';
+    // GSD's background check writes latest: 'unknown' when its npm lookup
+    // fails. Only treat latest as a real version when it looks like semver \u2014
+    // otherwise a failed check renders a false "update available" badge.
+    const latestIsVersion = /^\d+\.\d+\.\d+/.test(latest);
     const updateAvailable = parsed.update_available === true ||
       parsed.updateAvailable === true ||
-      (!!latest && !!installed && latest !== installed);
+      (latestIsVersion && !!installed && latest !== installed);
 
-    if (!updateAvailable) return null;
-    return latest ? `\u2b06 /gsd-update ${latest}` : '\u2b06 /gsd-update';
+    if (updateAvailable) {
+      return latestIsVersion ? `\u2b06 /gsd-update ${latest}` : '\u2b06 /gsd-update';
+    }
+    // Check ran but could not determine the latest version \u2014 surface the
+    // failure instead of hiding it.
+    if (!latestIsVersion) return '\u26a0 /gsd-update error';
+    return null;
   } catch (error) {
     return null;
   }

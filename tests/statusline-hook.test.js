@@ -74,6 +74,132 @@ describe('statusline hook GSD update segment', () => {
     assert.equal(result.status, 0);
     assert.match(clean, /\/gsd-update 1\.40\.0/);
   });
+
+  it('renders error badge when background check failed (latest: unknown)', () => {
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'statusline-gsd-update-'));
+    const result = runHook(cwd, {
+      enabled: ['model', 'gsdupdate'],
+      separator: ' | ',
+      sepColor: 'gray',
+      sepBold: false,
+      sepDim: false,
+      showCaptions: false,
+      overrides: {
+        model: { bracket: 'square', caseTransform: 'upper', color: 'orange' }
+      }
+    }, {}, {}, root => {
+      const cacheDir = path.join(root, '.cache', 'gsd');
+      fs.mkdirSync(cacheDir, { recursive: true });
+      // Shape written by gsd-check-update-worker.js when its npm lookup fails.
+      fs.writeFileSync(path.join(cacheDir, 'gsd-update-check.json'), JSON.stringify({
+        update_available: null,
+        installed: '1.1.0',
+        latest: 'unknown'
+      }), 'utf8');
+    });
+
+    const clean = result.stdout.replace(/\x1B\[[0-9;]*m/g, '');
+    assert.equal(result.status, 0);
+    assert.match(clean, /⚠ \/gsd-update error/);
+    assert.doesNotMatch(clean, /unknown/);
+  });
+
+  it('reads the slug-suffixed cache filename used by gsd-core', () => {
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'statusline-gsd-update-'));
+    const result = runHook(cwd, {
+      enabled: ['model', 'gsdupdate'],
+      separator: ' | ',
+      sepColor: 'gray',
+      sepBold: false,
+      sepDim: false,
+      showCaptions: false,
+      overrides: {
+        model: { bracket: 'square', caseTransform: 'upper', color: 'orange' }
+      }
+    }, {}, {}, root => {
+      // gsd-core suffixes the cache filename with a package slug.
+      const cacheDir = path.join(root, '.cache', 'gsd');
+      fs.mkdirSync(cacheDir, { recursive: true });
+      fs.writeFileSync(path.join(cacheDir, 'gsd-update-check-opengsd-gsd-core.json'), JSON.stringify({
+        update_available: true,
+        installed: '1.3.1',
+        latest: '1.4.0',
+        checked: 1780000000,
+        package_name: '@opengsd/gsd-core'
+      }), 'utf8');
+    });
+
+    const clean = result.stdout.replace(/\x1B\[[0-9;]*m/g, '');
+    assert.equal(result.status, 0);
+    assert.match(clean, /\/gsd-update 1\.4\.0/);
+  });
+
+  it('reads the old per-config-dir cache location used by classic GSD', () => {
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'statusline-gsd-update-'));
+    const result = runHook(cwd, {
+      enabled: ['model', 'gsdupdate'],
+      separator: ' | ',
+      sepColor: 'gray',
+      sepBold: false,
+      sepDim: false,
+      showCaptions: false,
+      overrides: {
+        model: { bracket: 'square', caseTransform: 'upper', color: 'orange' }
+      }
+    }, {}, {}, (root, claudeDir) => {
+      // Classic GSD wrote into <configDir>/cache/ instead of ~/.cache/gsd/.
+      const cacheDir = path.join(claudeDir, 'cache');
+      fs.mkdirSync(cacheDir, { recursive: true });
+      fs.writeFileSync(path.join(cacheDir, 'gsd-update-check.json'), JSON.stringify({
+        update_available: true,
+        installed: '1.36.0',
+        latest: '1.42.3',
+        checked: 1780000000
+      }), 'utf8');
+    });
+
+    const clean = result.stdout.replace(/\x1B\[[0-9;]*m/g, '');
+    assert.equal(result.status, 0);
+    assert.match(clean, /\/gsd-update 1\.42\.3/);
+  });
+
+  it('prefers the freshest cache when both locations exist', () => {
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'statusline-gsd-update-'));
+    const result = runHook(cwd, {
+      enabled: ['model', 'gsdupdate'],
+      separator: ' | ',
+      sepColor: 'gray',
+      sepBold: false,
+      sepDim: false,
+      showCaptions: false,
+      overrides: {
+        model: { bracket: 'square', caseTransform: 'upper', color: 'orange' }
+      }
+    }, {}, {}, (root, claudeDir) => {
+      // Stale classic-GSD entry in the config dir...
+      const oldCacheDir = path.join(claudeDir, 'cache');
+      fs.mkdirSync(oldCacheDir, { recursive: true });
+      fs.writeFileSync(path.join(oldCacheDir, 'gsd-update-check.json'), JSON.stringify({
+        update_available: true,
+        installed: '1.36.0',
+        latest: '1.42.3',
+        checked: 1700000000
+      }), 'utf8');
+      // ...and a fresher up-to-date entry in the shared path must win.
+      const newCacheDir = path.join(root, '.cache', 'gsd');
+      fs.mkdirSync(newCacheDir, { recursive: true });
+      fs.writeFileSync(path.join(newCacheDir, 'gsd-update-check.json'), JSON.stringify({
+        update_available: false,
+        installed: '1.1.0',
+        latest: '1.1.0',
+        checked: 1780000000
+      }), 'utf8');
+    });
+
+    const clean = result.stdout.replace(/\x1B\[[0-9;]*m/g, '');
+    assert.equal(result.status, 0);
+    assert.doesNotMatch(clean, /\/gsd-update/);
+  });
 });
 
 describe('statusline hook RTK and Context Mode segments', () => {
