@@ -104,6 +104,36 @@ describe('statusline hook GSD update segment', () => {
     assert.doesNotMatch(clean, /unknown/);
   });
 
+  it('reads the slug-suffixed cache filename used by gsd-core', () => {
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'statusline-gsd-update-'));
+    const result = runHook(cwd, {
+      enabled: ['model', 'gsdupdate'],
+      separator: ' | ',
+      sepColor: 'gray',
+      sepBold: false,
+      sepDim: false,
+      showCaptions: false,
+      overrides: {
+        model: { bracket: 'square', caseTransform: 'upper', color: 'orange' }
+      }
+    }, {}, {}, root => {
+      // gsd-core suffixes the cache filename with a package slug.
+      const cacheDir = path.join(root, '.cache', 'gsd');
+      fs.mkdirSync(cacheDir, { recursive: true });
+      fs.writeFileSync(path.join(cacheDir, 'gsd-update-check-opengsd-gsd-core.json'), JSON.stringify({
+        update_available: true,
+        installed: '1.3.1',
+        latest: '1.4.0',
+        checked: 1780000000,
+        package_name: '@opengsd/gsd-core'
+      }), 'utf8');
+    });
+
+    const clean = result.stdout.replace(/\x1B\[[0-9;]*m/g, '');
+    assert.equal(result.status, 0);
+    assert.match(clean, /\/gsd-update 1\.4\.0/);
+  });
+
   it('reads the old per-config-dir cache location used by classic GSD', () => {
     const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'statusline-gsd-update-'));
     const result = runHook(cwd, {

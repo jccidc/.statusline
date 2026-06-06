@@ -509,11 +509,24 @@ function readGsdPhase(cwd) {
 
 function readGsdUpdate(homeDir) {
   try {
-    // GSD has written its update-check cache to different locations over
-    // time: newer GSD uses the shared ~/.cache/gsd/ path, older GSD wrote
-    // into the runtime config dir's cache/. Check all candidates and use
-    // the freshest entry so the badge works with either install.
-    const candidates = [path.join(homeDir, '.cache', 'gsd', 'gsd-update-check.json')];
+    // GSD has used several cache locations and filenames over time:
+    //  - ~/.cache/gsd/gsd-update-check*.json — shared path; newer GSD (gsd-core)
+    //    suffixes the filename with a package slug, e.g.
+    //    gsd-update-check-opengsd-gsd-core.json
+    //  - <configDir>/cache/gsd-update-check.json — classic GSD
+    // Collect all candidates and use the freshest entry so the badge keeps
+    // working across GSD renames.
+    const candidates = [];
+    const sharedDir = path.join(homeDir, '.cache', 'gsd');
+    try {
+      for (const f of fs.readdirSync(sharedDir)) {
+        if (f.startsWith('gsd-update-check') && f.endsWith('.json')) {
+          candidates.push(path.join(sharedDir, f));
+        }
+      }
+    } catch (_e) {
+      // Shared cache dir missing — fall through to legacy locations.
+    }
     if (process.env.CLAUDE_CONFIG_DIR) {
       candidates.push(path.join(process.env.CLAUDE_CONFIG_DIR, 'cache', 'gsd-update-check.json'));
     }
