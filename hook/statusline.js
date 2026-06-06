@@ -509,19 +509,53 @@ function readGsdPhase(cwd) {
 
 function readGsdUpdate(homeDir) {
   try {
-    const updatePath = path.join(homeDir, '.cache', 'gsd', 'gsd-update-check.json');
-    if (!fs.existsSync(updatePath)) return null;
-    const parsed = JSON.parse(fs.readFileSync(updatePath, 'utf8'));
-    if (!parsed || typeof parsed !== 'object') return null;
+    // GSD has written its update-check cache to different locations over
+    // time: newer GSD uses the shared ~/.cache/gsd/ path, older GSD wrote
+    // into the runtime config dir's cache/. Check all candidates and use
+    // the freshest entry so the badge works with either install.
+    const candidates = [path.join(homeDir, '.cache', 'gsd', 'gsd-update-check.json')];
+    if (process.env.CLAUDE_CONFIG_DIR) {
+      candidates.push(path.join(process.env.CLAUDE_CONFIG_DIR, 'cache', 'gsd-update-check.json'));
+    }
+    candidates.push(path.join(homeDir, '.claude', 'cache', 'gsd-update-check.json'));
+
+    let parsed = null;
+    let bestTime = -1;
+    for (const candidate of candidates) {
+      try {
+        if (!fs.existsSync(candidate)) continue;
+        const entry = JSON.parse(fs.readFileSync(candidate, 'utf8'));
+        if (!entry || typeof entry !== 'object') continue;
+        const checked = typeof entry.checked === 'number'
+          ? entry.checked * 1000
+          : fs.statSync(candidate).mtimeMs;
+        if (checked > bestTime) {
+          bestTime = checked;
+          parsed = entry;
+        }
+      } catch (_e) {
+        // Unreadable candidate — try the next location.
+      }
+    }
+    if (!parsed) return null;
 
     const latest = typeof parsed.latest === 'string' ? parsed.latest.trim() : '';
     const installed = typeof parsed.installed === 'string' ? parsed.installed.trim() : '';
+    // GSD's background check writes latest: 'unknown' when its npm lookup
+    // fails. Only treat latest as a real version when it looks like semver \u2014
+    // otherwise a failed check renders a false "update available" badge.
+    const latestIsVersion = /^\d+\.\d+\.\d+/.test(latest);
     const updateAvailable = parsed.update_available === true ||
       parsed.updateAvailable === true ||
-      (!!latest && !!installed && latest !== installed);
+      (latestIsVersion && !!installed && latest !== installed);
 
-    if (!updateAvailable) return null;
-    return latest ? `\u2b06 /gsd-update ${latest}` : '\u2b06 /gsd-update';
+    if (updateAvailable) {
+      return latestIsVersion ? `\u2b06 /gsd-update ${latest}` : '\u2b06 /gsd-update';
+    }
+    // Check ran but could not determine the latest version \u2014 surface the
+    // failure instead of hiding it.
+    if (!latestIsVersion) return '\u26a0 /gsd-update error';
+    return null;
   } catch (error) {
     return null;
   }
