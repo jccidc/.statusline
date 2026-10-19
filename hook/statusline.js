@@ -737,7 +737,10 @@ process.stdin.on('end', () => {
       }
       try {
         const { execSync } = require('child_process');
-        const value = execSync('git ' + args, {
+        // The timeout kills git outright, so it must never take .git/index.lock (status otherwise does, to
+        // refresh the index): a status killed while holding it leaves the lock behind and blocks every later
+        // git write in that repository.
+        const value = execSync('git --no-optional-locks ' + args, {
           cwd,
           stdio: ['ignore', 'pipe', 'ignore'],
           timeout: 400,
